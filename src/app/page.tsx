@@ -3,6 +3,8 @@ import MotionProvider from '@/components/MotionProvider';
 import Header from '@/components/Header';
 import Hero from '@/components/Hero';
 import Ingredients from '@/components/Ingredients';
+import Brands from '@/components/Brands';
+import ShopByConcern from '@/components/ShopByConcern';
 import Explore from '@/components/Explore';
 import Ethos from '@/components/Ethos';
 import Journal from '@/components/Journal';
@@ -18,6 +20,14 @@ export default function Home() {
       <main id="main">
         <Hero />
         <Ingredients />
+        <div className="container d-none d-md-block">
+          <div className="border" />
+        </div>
+        <Brands />
+        <div className="container d-none d-md-block">
+          <div className="border" />
+        </div>
+        <ShopByConcern />
         <div className="container d-none d-md-block">
           <div className="border" />
         </div>

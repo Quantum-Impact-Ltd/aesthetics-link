@@ -1,23 +1,49 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import AestheticsLinkWordmark from "@/components/AestheticsLinkWordmark";
+
+const SHOP_LINKS = {
+  top: [
+    { label: "All Products", href: "/products" },
+    { label: "Bestsellers", href: "/products?sort=bestsellers" },
+    { label: "New Arrivals", href: "/products?sort=new" },
+  ],
+  concerns: [
+    { label: "Brightening", href: "/products?category=Brightening+Moisturiser" },
+    { label: "Hydration", href: "/products?category=Hydration+Serum" },
+    { label: "Anti-Ageing", href: "/products?category=Overnight+Treatment" },
+    { label: "SPF Protection", href: "/products?category=UV+Protection" },
+    { label: "Eye Care", href: "/products?category=Eye+Treatment" },
+    { label: "Targeted Treatment", href: "/products?category=Targeted+Treatment" },
+  ],
+};
+
+const BRAND_LINKS = [
+  { label: "Lumière Atelier", href: "/brands/lumiere-atelier" },
+  { label: "Botan Botanics", href: "/brands/botan-botanics" },
+  { label: "Clinis Lab", href: "/brands/clinis-lab" },
+  { label: "Velour Skin", href: "/brands/velour-skin" },
+  { label: "Verdant", href: "/brands/verdant" },
+  { label: "Éclat London", href: "/brands/eclat-london" },
+];
 
 export default function Header() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const [hidden, setHidden] = useState(false);
+  const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
+  const [mobileExpanded, setMobileExpanded] = useState<string | null>(null);
+  const dropdownTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     let lastY = 0;
 
     const onScroll = () => {
       const currentY = window.scrollY;
-
       setScrolled(currentY > 50);
       setHidden(currentY > 140 && currentY > lastY && !menuOpen);
-
       lastY = currentY;
     };
 
@@ -28,16 +54,37 @@ export default function Header() {
 
   useEffect(() => {
     document.body.style.overflow = menuOpen ? "hidden" : "";
-
-    return () => {
-      document.body.style.overflow = "";
-    };
+    return () => { document.body.style.overflow = ""; };
   }, [menuOpen]);
+
+  const openDropdown = (name: string) => {
+    if (dropdownTimeout.current) clearTimeout(dropdownTimeout.current);
+    setActiveDropdown(name);
+  };
+
+  const closeDropdown = () => {
+    dropdownTimeout.current = setTimeout(() => setActiveDropdown(null), 120);
+  };
+
+  const toggleMobile = (name: string) => {
+    setMobileExpanded((prev) => (prev === name ? null : name));
+  };
+
+  const closeAll = () => {
+    setMenuOpen(false);
+    setMobileExpanded(null);
+    setActiveDropdown(null);
+  };
 
   return (
     <header
       id="header"
-      className={`is--white${scrolled ? " scrolled active" : ""}${hidden ? " is--hidden" : ""}`}
+      className={[
+        "is--white",
+        scrolled ? "scrolled" : "",
+        scrolled || menuOpen ? "active" : "",
+        hidden ? "is--hidden" : "",
+      ].filter(Boolean).join(" ")}
     >
       <div className="container">
         <nav className={`navbar${menuOpen ? " active" : ""}`}>
@@ -58,43 +105,148 @@ export default function Header() {
 
           <div className={`navbar-menu${menuOpen ? " open" : ""}`}>
             <ul className="navbar-menu-list">
-              <li className="navbar-menu-list-item">
-                <Link
-                  href="/products"
-                  className="navbar-link-text link"
-                  onClick={() => setMenuOpen(false)}
+
+              {/* Shop with dropdown */}
+              <li
+                className="navbar-menu-list-item navbar-menu-list-item--has-dropdown"
+                onMouseEnter={() => openDropdown("shop")}
+                onMouseLeave={closeDropdown}
+              >
+                <button
+                  className="navbar-link-text navbar-dropdown-trigger d-none d-md-flex"
+                  aria-expanded={activeDropdown === "shop"}
+                  aria-haspopup="true"
                 >
                   Shop
-                </Link>
-              </li>
-              <li className="navbar-menu-list-item">
-                <Link
-                  href="/philosophy"
-                  className="navbar-link-text link"
-                  onClick={() => setMenuOpen(false)}
+                  <svg className="navbar-chevron" width="8" height="5" viewBox="0 0 8 5" fill="none" aria-hidden="true">
+                    <path d="M1 1L4 4L7 1" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                </button>
+                {/* Mobile accordion trigger */}
+                <button
+                  className="navbar-link-text navbar-dropdown-trigger d-md-none"
+                  onClick={() => toggleMobile("shop")}
+                  aria-expanded={mobileExpanded === "shop"}
                 >
-                  Philosophy
-                </Link>
-              </li>
-              <li className="navbar-menu-list-item">
-                <Link
-                  href="/gallery"
-                  className="navbar-link-text link"
-                  onClick={() => setMenuOpen(false)}
+                  Shop
+                  <span className={`navbar-accordion-icon${mobileExpanded === "shop" ? " is-open" : ""}`}>+</span>
+                </button>
+
+                {/* Desktop dropdown */}
+                <div
+                  className={`navbar-dropdown d-none d-md-block${activeDropdown === "shop" ? " is-open" : ""}`}
+                  onMouseEnter={() => openDropdown("shop")}
+                  onMouseLeave={closeDropdown}
                 >
-                  Gallery
-                </Link>
+                  <div className="navbar-dropdown-col">
+                    {SHOP_LINKS.top.map((link) => (
+                      <Link key={link.href} href={link.href} className="navbar-dropdown-link" onClick={closeAll}>
+                        {link.label}
+                      </Link>
+                    ))}
+                  </div>
+                  <div className="navbar-dropdown-divider" />
+                  <div className="navbar-dropdown-col">
+                    <span className="navbar-dropdown-label superscript">By Concern</span>
+                    <div className="navbar-dropdown-concerns">
+                      {SHOP_LINKS.concerns.map((link) => (
+                        <Link key={link.href} href={link.href} className="navbar-dropdown-link navbar-dropdown-link--sm" onClick={closeAll}>
+                          {link.label}
+                        </Link>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Mobile accordion */}
+                <div className={`navbar-accordion-panel d-md-none${mobileExpanded === "shop" ? " is-open" : ""}`}>
+                  <div className="navbar-accordion-inner">
+                    {SHOP_LINKS.top.map((link) => (
+                      <Link key={link.href} href={link.href} className="navbar-accordion-link" onClick={closeAll}>
+                        {link.label}
+                      </Link>
+                    ))}
+                    <span className="navbar-accordion-sublabel superscript">By Concern</span>
+                    {SHOP_LINKS.concerns.map((link) => (
+                      <Link key={link.href} href={link.href} className="navbar-accordion-link navbar-accordion-link--sm" onClick={closeAll}>
+                        {link.label}
+                      </Link>
+                    ))}
+                  </div>
+                </div>
               </li>
+
+              {/* Brands with dropdown */}
+              <li
+                className="navbar-menu-list-item navbar-menu-list-item--has-dropdown"
+                onMouseEnter={() => openDropdown("brands")}
+                onMouseLeave={closeDropdown}
+              >
+                <button
+                  className="navbar-link-text navbar-dropdown-trigger d-none d-md-flex"
+                  aria-expanded={activeDropdown === "brands"}
+                  aria-haspopup="true"
+                >
+                  Brands
+                  <svg className="navbar-chevron" width="8" height="5" viewBox="0 0 8 5" fill="none" aria-hidden="true">
+                    <path d="M1 1L4 4L7 1" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                </button>
+                <button
+                  className="navbar-link-text navbar-dropdown-trigger d-md-none"
+                  onClick={() => toggleMobile("brands")}
+                  aria-expanded={mobileExpanded === "brands"}
+                >
+                  Brands
+                  <span className={`navbar-accordion-icon${mobileExpanded === "brands" ? " is-open" : ""}`}>+</span>
+                </button>
+
+                {/* Desktop dropdown */}
+                <div
+                  className={`navbar-dropdown d-none d-md-block${activeDropdown === "brands" ? " is-open" : ""}`}
+                  onMouseEnter={() => openDropdown("brands")}
+                  onMouseLeave={closeDropdown}
+                >
+                  <div className="navbar-dropdown-col">
+                    {BRAND_LINKS.map((link) => (
+                      <Link key={link.href} href={link.href} className="navbar-dropdown-link" onClick={closeAll}>
+                        {link.label}
+                      </Link>
+                    ))}
+                    <div className="navbar-dropdown-divider" />
+                    <Link href="/brands" className="navbar-dropdown-link navbar-dropdown-link--view-all" onClick={closeAll}>
+                      View All Brands →
+                    </Link>
+                  </div>
+                </div>
+
+                {/* Mobile accordion */}
+                <div className={`navbar-accordion-panel d-md-none${mobileExpanded === "brands" ? " is-open" : ""}`}>
+                  <div className="navbar-accordion-inner">
+                    {BRAND_LINKS.map((link) => (
+                      <Link key={link.href} href={link.href} className="navbar-accordion-link" onClick={closeAll}>
+                        {link.label}
+                      </Link>
+                    ))}
+                    <Link href="/brands" className="navbar-accordion-link navbar-accordion-link--sm" onClick={closeAll}>
+                      View All Brands
+                    </Link>
+                  </div>
+                </div>
+              </li>
+
+              {/* About Us */}
               <li className="navbar-menu-list-item">
                 <Link
                   href="/about"
                   className="navbar-link-text link"
-                  onClick={() => setMenuOpen(false)}
+                  onClick={closeAll}
                 >
                   About Us
                 </Link>
               </li>
             </ul>
+
             <div className="navbar-menu-foot d-md-none">
               <p>Stay linked to the latest in aesthetic science and new launches.</p>
             </div>

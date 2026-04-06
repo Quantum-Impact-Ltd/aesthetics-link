@@ -7,22 +7,22 @@ const INGREDIENTS = [
   {
     icon: "/images/icon-clean-beyond-reproach.svg",
     title: "Clinically Validated",
-    desc: "Every formula is backed by dermal science and verified actives — free from over 1800 questionable compounds. Because precision starts with the right ingredients.",
+    desc: "Every brand we carry is held to rigorous dermal science standards — nothing makes it onto our shelves without clinical evidence behind it.",
   },
   {
     icon: "/images/icon-radical-transparency.svg",
     title: "Full Transparency",
-    desc: "No hidden ingredients, no guesswork. We disclose our complete formulas so you always know exactly what you're applying and at what concentration.",
+    desc: "We only work with brands who fully disclose their formulations. No hidden ingredients, no proprietary black boxes — just honest skincare.",
   },
   {
     icon: "/images/icon-potent-multi-tasking.svg",
     title: "Potent & Targeted",
-    desc: "Our actives, antioxidants and skin-restoring compounds are precisely dosed and backed by dermal science to deliver visible, measurable results.",
+    desc: "We curate formulas where every active earns its place — precisely dosed, backed by science, and chosen for visible, measurable results.",
   },
   {
     icon: "/images/icon-conscious-responsible.svg",
     title: "Responsible Beauty",
-    desc: "PETA Certified Vegan and Cruelty Free. Our formulas are always housed in responsible packaging and produced with sustainability at the core.",
+    desc: "Our brands are PETA Certified Vegan and Cruelty Free, housed in responsible packaging and produced with sustainability at the core.",
   },
 ] as const;
 
@@ -61,14 +61,13 @@ export default function Ingredients() {
       <div className="container">
         <div className="ingredients__text">
           <h2 className="ingredients__title">
-            Science-Led, Results-Driven,{" "}
+            Expert-Curated, Results-Driven,{" "}
             <span className="ingredients__title-serif font-serif text-underline-border">
-              Precision.
+              Trusted.
             </span>
           </h2>
           <p className="ingredients__desc maxwidth">
-            Precision-engineered formulas that truly transform, backed by science
-            and designed without compromise.
+            We vet every brand, every formula, so you don&apos;t have to.
           </p>
         </div>
         <div ref={wrapperRef} className="ingredients__wrapper">

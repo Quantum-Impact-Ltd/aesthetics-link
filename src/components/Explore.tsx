@@ -294,7 +294,7 @@ function ProductRail({
 const pureBrillianceProducts: ProductCardProps[] = [
   {
     href: "/products/aha-brightening-exfoliant-cleanser-face-wash",
-    category: "Pure Brilliance",
+    category: "Bestsellers",
     title: "AHA Brightening Exfoliant Cleanser/Face Wash",
     price: "\u00A349",
     imageSrc: "/images/product-pb-1.jpg",
@@ -303,7 +303,7 @@ const pureBrillianceProducts: ProductCardProps[] = [
   },
   {
     href: "/products/bio-exfoliant-brightening-sleeping-mask",
-    category: "Pure Brilliance",
+    category: "Bestsellers",
     title: "Bio Exfoliant Brightening Sleeping Mask",
     price: "\u00A349",
     imageSrc: "/images/product-pb-2.jpg",
@@ -312,7 +312,7 @@ const pureBrillianceProducts: ProductCardProps[] = [
   },
   {
     href: "/products/aha-brightening-exfoliant-toner-essence",
-    category: "Pure Brilliance",
+    category: "Bestsellers",
     title: "AHA Brightening Exfoliant Toner/Essence",
     price: "\u00A349",
     imageSrc: "/images/product-pb-3.jpg",
@@ -324,7 +324,7 @@ const pureBrillianceProducts: ProductCardProps[] = [
 const refinedBlendsProducts: ProductCardProps[] = [
   {
     href: "/products/rosehip-bakuchiol-skin-perfecting-oil",
-    category: "Refined Blends",
+    category: "New Arrivals",
     title: "Rosehip & Bakuchiol Skin Perfecting Oil",
     price: "\u00A349",
     imageSrc: "/images/product-vb-1.jpg",
@@ -333,7 +333,7 @@ const refinedBlendsProducts: ProductCardProps[] = [
   },
   {
     href: "/products/manjistha-saffron-moisture-gel",
-    category: "Refined Blends",
+    category: "New Arrivals",
     title: "Brightening Saffron Moisture Gel",
     price: "\u00A349",
     imageSrc: "/images/product-vb-2.jpg",
@@ -342,7 +342,7 @@ const refinedBlendsProducts: ProductCardProps[] = [
   },
   {
     href: "/products/acne-calming-herb-rescue-mask",
-    category: "Refined Blends",
+    category: "New Arrivals",
     title: "Clarifying Calm Rescue Mask",
     price: "\u00A349",
     imageSrc: "/images/product-vb-3.jpg",
@@ -351,7 +351,7 @@ const refinedBlendsProducts: ProductCardProps[] = [
   },
   {
     href: "/products/kumkumadi-radiance-facial-oil",
-    category: "Refined Blends",
+    category: "New Arrivals",
     title: "Luminous Renewal Facial Oil",
     price: "\u00A349",
     imageSrc: "/images/product-vb-4.jpg",
@@ -395,12 +395,12 @@ export default function Explore() {
         </svg>
       </div>
 
-      {/* Pure Brilliance */}
+      {/* Bestsellers */}
       <div className="half__grid reveal-up" data-reveal>
         <div className="half__grid-img">
           <img
             ref={img1Ref}
-            alt="Pure Brilliance"
+            alt="Bestsellers"
             src="/images/explore-1.jpg"
             className="parallax-image-asset"
           />
@@ -408,8 +408,8 @@ export default function Explore() {
         <div className="half__grid-content">
           <div className="half__grid-text">
             <h3 className="half__grid-title">
-              Pure <br />
-              <span className="font-serif">Brilliance</span>
+              Best <br />
+              <span className="font-serif">Sellers</span>
             </h3>
             <Link href="/products" className="slider-arrow">
               <SliderArrowIcon />
@@ -419,17 +419,17 @@ export default function Explore() {
             <ProductRail products={pureBrillianceProducts} reverse />
           </div>
           <p className="text-uppercase maxwidth">
-            Precision formulas engineered for visible, lasting results.
+            Our most-loved formulas, trusted by thousands.
           </p>
         </div>
       </div>
 
-      {/* Refined Blends */}
+      {/* New Arrivals */}
       <div className="half__grid reveal-up" data-reveal>
         <div className="half__grid-img">
           <img
             ref={img2Ref}
-            alt="Refined Blends"
+            alt="New Arrivals"
             src="/images/explore-2.jpg"
             className="parallax-image-asset"
           />
@@ -437,8 +437,8 @@ export default function Explore() {
         <div className="half__grid-content">
           <div className="half__grid-text">
             <h3 className="half__grid-title">
-              Refined <br />
-              <span className="font-serif">Blends</span>
+              New <br />
+              <span className="font-serif">Arrivals</span>
             </h3>
             <Link href="/products" className="slider-arrow">
               <SliderArrowIcon />
@@ -448,7 +448,7 @@ export default function Explore() {
             <ProductRail products={refinedBlendsProducts} />
           </div>
           <p className="text-uppercase maxwidth">
-            Precision formulas engineered for visible, lasting results.
+            The latest additions to our curated edit.
           </p>
         </div>
       </div>

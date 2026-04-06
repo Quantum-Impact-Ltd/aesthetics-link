@@ -3,10 +3,10 @@
 import Link from "next/link";
 
 const STATS = [
-  { num: "1800+", label: "Blocked Ingredients" },
-  { num: "100%", label: "Formula Disclosed" },
+  { num: "200+", label: "Products" },
+  { num: "30+", label: "Brands" },
   { num: "0", label: "Compromise" },
-  { num: "30yr", label: "UK Clinic Heritage" },
+  { num: "30yr", label: "UK Heritage" },
 ] as const;
 
 export default function Ethos() {
@@ -27,9 +27,9 @@ export default function Ethos() {
 
         <div className="ethos__bottom">
           <p className="ethos__statement font-serif">
-            Every active earns its place.
+            Every brand earns its place.
             <br />
-            Every formula is built to last.
+            Every product is built to last.
           </p>
           <Link href="/philosophy" className="ethos__more">
             <span className="text-uppercase">Read our philosophy</span>

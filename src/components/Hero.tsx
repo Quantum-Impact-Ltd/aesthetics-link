@@ -83,8 +83,7 @@ export default function Hero() {
           </h1>
         </div>
         <p className="intro__desc maxwidth text-center reveal-up is-visible hero-copy-reveal">
-          Precision-engineered formulas that truly transform, backed by science
-          and designed without compromise.
+          The finest in aesthetic skincare, expertly curated for every skin story.
         </p>
       </div>
       <div className="intro__image">
