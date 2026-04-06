@@ -753,9 +753,15 @@ section {
 .navbar-link-text {
   color: #fff;
   font-size: 0.85rem;
+  line-height: 1;
   text-transform: uppercase;
   letter-spacing: 0.1em;
   transition: color 0.3s;
+}
+
+.navbar-menu-list-item > a.navbar-link-text {
+  align-items: center;
+  display: inline-flex;
 }
 
 .navbar-cta {
@@ -2828,7 +2834,9 @@ h5,
 }
 
 @media (min-width: 767.99px) {
-  #header.is--white a {
+  #header.is--white .navbar-logo,
+  #header.is--white .navbar-link-text,
+  #header.is--white .navbar-menu-list-item-link {
     color: #fff;
   }
 
@@ -2853,7 +2861,7 @@ h5,
   fill: #fff !important;
 }
 
-#header.is--white .navbar-cta svg path {
+#header.is--white:not(.scrolled):not(.active) .navbar-cta svg path {
   stroke: #333 !important;
 }
 
@@ -6121,9 +6129,9 @@ h5,
   color: inherit;
   cursor: pointer;
   font-family: inherit;
-  font-size: inherit;
   font-weight: inherit;
   gap: 0.35rem;
+  line-height: 1;
   padding: 0;
 }
 
@@ -6219,6 +6227,13 @@ h5,
 .navbar-menu-list-item--has-dropdown {
   flex-direction: column;
   align-items: flex-start;
+}
+
+@media (min-width: 768px) {
+  .navbar-menu-list-item--has-dropdown {
+    align-items: center;
+    flex-direction: row;
+  }
 }
 
 .navbar-accordion-panel {

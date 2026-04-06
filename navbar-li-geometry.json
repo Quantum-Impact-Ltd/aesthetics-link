@@ -1,0 +1,72 @@
+[
+  {
+    "item": "Shop",
+    "liTop": 43.109375,
+    "liBottom": 62.28125,
+    "liHeight": 19.171875,
+    "targetTop": 43.109375,
+    "targetBottom": 53.3125,
+    "targetHeight": 10.203125,
+    "liAlignItems": "flex-start",
+    "liDisplay": "flex",
+    "targetDisplay": "flex",
+    "targetPosition": "static",
+    "targetAlignSelf": "auto",
+    "targetMarginTop": "0px",
+    "targetMarginBottom": "0px",
+    "targetPaddingTop": "0px",
+    "targetPaddingBottom": "0px"
+  },
+  {
+    "item": "Brands",
+    "liTop": 43.109375,
+    "liBottom": 62.28125,
+    "liHeight": 19.171875,
+    "targetTop": 43.109375,
+    "targetBottom": 53.3125,
+    "targetHeight": 10.203125,
+    "liAlignItems": "flex-start",
+    "liDisplay": "flex",
+    "targetDisplay": "flex",
+    "targetPosition": "static",
+    "targetAlignSelf": "auto",
+    "targetMarginTop": "0px",
+    "targetMarginBottom": "0px",
+    "targetPaddingTop": "0px",
+    "targetPaddingBottom": "0px"
+  },
+  {
+    "item": "About Us",
+    "liTop": 43.109375,
+    "liBottom": 62.28125,
+    "liHeight": 19.171875,
+    "targetTop": 47.59375,
+    "targetBottom": 57.796875,
+    "targetHeight": 10.203125,
+    "liAlignItems": "center",
+    "liDisplay": "flex",
+    "targetDisplay": "flex",
+    "targetPosition": "static",
+    "targetAlignSelf": "auto",
+    "targetMarginTop": "0px",
+    "targetMarginBottom": "0px",
+    "targetPaddingTop": "0px",
+    "targetPaddingBottom": "0px"
+  },
+  {
+    "item": "unknown",
+    "liTop": 41.953125,
+    "liBottom": 63.453125,
+    "liHeight": 21.5,
+    "liAlignItems": "center",
+    "liDisplay": "flex"
+  },
+  {
+    "item": "unknown",
+    "liTop": 41.953125,
+    "liBottom": 63.453125,
+    "liHeight": 21.5,
+    "liAlignItems": "center",
+    "liDisplay": "flex"
+  }
+]
