@@ -88,16 +88,16 @@ export default function Header() {
     >
       <div className="container">
         <nav className={`navbar${menuOpen ? " active" : ""}`}>
-          <div
+          <button
+            type="button"
             className={`navbar-hamburger${menuOpen ? " active" : ""}`}
             onClick={() => setMenuOpen((o) => !o)}
             aria-label={menuOpen ? "Close menu" : "Open menu"}
             aria-expanded={menuOpen}
-            role="button"
           >
             <div className="navbar-hamburger-line navbar-hamburger-line-1" />
             <div className="navbar-hamburger-line navbar-hamburger-line-2" />
-          </div>
+          </button>
 
           <Link href="/" className="navbar-logo" aria-label="AestheticsLink home">
             <AestheticsLinkWordmark className="navbar-logo__wordmark" />
@@ -113,6 +113,7 @@ export default function Header() {
                 onMouseLeave={closeDropdown}
               >
                 <button
+                  type="button"
                   className="navbar-link-text navbar-dropdown-trigger d-none d-md-flex"
                   aria-expanded={activeDropdown === "shop"}
                   aria-haspopup="true"
@@ -124,6 +125,7 @@ export default function Header() {
                 </button>
                 {/* Mobile accordion trigger */}
                 <button
+                  type="button"
                   className="navbar-link-text navbar-dropdown-trigger d-md-none"
                   onClick={() => toggleMobile("shop")}
                   aria-expanded={mobileExpanded === "shop"}
@@ -183,6 +185,7 @@ export default function Header() {
                 onMouseLeave={closeDropdown}
               >
                 <button
+                  type="button"
                   className="navbar-link-text navbar-dropdown-trigger d-none d-md-flex"
                   aria-expanded={activeDropdown === "brands"}
                   aria-haspopup="true"
@@ -193,6 +196,7 @@ export default function Header() {
                   </svg>
                 </button>
                 <button
+                  type="button"
                   className="navbar-link-text navbar-dropdown-trigger d-md-none"
                   onClick={() => toggleMobile("brands")}
                   aria-expanded={mobileExpanded === "brands"}
@@ -245,6 +249,15 @@ export default function Header() {
                   About Us
                 </Link>
               </li>
+              <li className="navbar-menu-list-item navbar-menu-list-item--mobile-account">
+                <Link
+                  href="/login"
+                  className="navbar-link-text link"
+                  onClick={closeAll}
+                >
+                  Account
+                </Link>
+              </li>
             </ul>
 
             <div className="navbar-menu-foot d-md-none">
@@ -293,7 +306,7 @@ export default function Header() {
                 </Link>
               </li>
               <div className="border-vertical d-none d-md-block" />
-              <li className="navbar-menu-list-item d-none d-md-block">
+              <li className="navbar-menu-list-item navbar-cta-account">
                 <Link
                   href="/login"
                   className="navbar-menu-list-item-link"
