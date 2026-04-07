@@ -826,6 +826,7 @@ section {
 
 #intro .intro__desc {
   color: #fff;
+  font-size: clamp(1.2rem, 1.1vw, 1.3rem);
   margin-top: 1.5rem;
 }
 

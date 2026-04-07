@@ -78,8 +78,8 @@ export default function Hero() {
       <div className="intro__text">
         <div className="intro__title text-center text-none reveal-up is-visible hero-title-reveal">
           <h1>
-            <span className="font-serif">Aesthetic</span> by Design <br />
-            Linked to <span className="font-serif">Results</span>
+            The <span className="font-serif">aesthetic</span> skincare edit, <br />
+            thoughtfully curated.
           </h1>
         </div>
         <p className="intro__desc maxwidth text-center reveal-up is-visible hero-copy-reveal">
