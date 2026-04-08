@@ -141,25 +141,28 @@ export async function fetchCart(): Promise<StorefrontCart> {
   return mapRawCart(raw);
 }
 
-export async function addCartItem(productId: number, quantity = 1): Promise<void> {
-  await requestStoreApi("/cart/add-item", {
+export async function addCartItem(productId: number, quantity = 1): Promise<StorefrontCart> {
+  const raw = await requestStoreApi<RawCart>("/cart/add-item", {
     method: "POST",
     body: JSON.stringify({ id: productId, quantity }),
   });
+  return mapRawCart(raw);
 }
 
-export async function updateCartItemQuantity(key: string, quantity: number): Promise<void> {
-  await requestStoreApi("/cart/update-item", {
+export async function updateCartItemQuantity(key: string, quantity: number): Promise<StorefrontCart> {
+  const raw = await requestStoreApi<RawCart>("/cart/update-item", {
     method: "POST",
     body: JSON.stringify({ key, quantity }),
   });
+  return mapRawCart(raw);
 }
 
-export async function removeCartItem(key: string): Promise<void> {
-  await requestStoreApi("/cart/remove-item", {
+export async function removeCartItem(key: string): Promise<StorefrontCart> {
+  const raw = await requestStoreApi<RawCart>("/cart/remove-item", {
     method: "POST",
     body: JSON.stringify({ key }),
   });
+  return mapRawCart(raw);
 }
 
 export async function submitCheckout(

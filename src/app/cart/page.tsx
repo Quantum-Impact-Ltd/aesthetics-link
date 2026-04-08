@@ -44,7 +44,7 @@ export default function CartPage() {
     void refreshCart();
   }, []);
 
-  async function withCartMutation(action: () => Promise<void>): Promise<void> {
+  async function withCartMutation(action: () => Promise<StorefrontCart>): Promise<void> {
     if (busy) {
       return;
     }
@@ -52,8 +52,8 @@ export default function CartPage() {
     setBusy(true);
     setError(null);
     try {
-      await action();
-      await refreshCart();
+      const nextCart = await action();
+      setCart(nextCart);
     } catch (mutationError) {
       setError(
         mutationError instanceof Error ? mutationError.message : "Unable to update your cart.",
@@ -64,15 +64,11 @@ export default function CartPage() {
   }
 
   async function handleQuantityChange(key: string, nextQuantity: number): Promise<void> {
-    await withCartMutation(async () => {
-      await updateCartItemQuantity(key, Math.max(1, nextQuantity));
-    });
+    await withCartMutation(() => updateCartItemQuantity(key, Math.max(1, nextQuantity)));
   }
 
   async function handleRemoveItem(key: string): Promise<void> {
-    await withCartMutation(async () => {
-      await removeCartItem(key);
-    });
+    await withCartMutation(() => removeCartItem(key));
   }
 
   function handleGoToCheckout(): void {

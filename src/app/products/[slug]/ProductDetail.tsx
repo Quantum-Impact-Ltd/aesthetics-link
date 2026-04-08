@@ -6,6 +6,7 @@ import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import MotionProvider from "@/components/MotionProvider";
 import { getMe, getWholesalePrices } from "@/lib/auth/client";
+import { addCartItem } from "@/lib/storefront/client";
 import type { StorefrontDetailProduct } from "@/lib/storefront/types";
 import { useEffect, useState } from "react";
 
@@ -97,23 +98,7 @@ export default function ProductDetail({ product }: { product: StorefrontDetailPr
     setAddStatus(null);
 
     try {
-      const response = await fetch("/api/woo/cart/add-item", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json",
-        },
-        body: JSON.stringify({
-          id: product.wooId,
-          quantity: 1,
-        }),
-      });
-
-      if (!response.ok) {
-        const payload = (await response.json().catch(() => null)) as { message?: string } | null;
-        throw new Error(payload?.message ?? "Unable to add this item to your bag.");
-      }
-
+      await addCartItem(product.wooId, 1);
       setAddStatus("Added to bag");
     } catch (error) {
       setAddStatus(error instanceof Error ? error.message : "Unable to add this item to your bag.");

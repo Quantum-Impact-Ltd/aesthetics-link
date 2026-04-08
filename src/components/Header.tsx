@@ -3,31 +3,53 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import AestheticsLinkWordmark from "@/components/AestheticsLinkWordmark";
+import type { StorefrontNavLink, StorefrontNavigation } from "@/lib/storefront/types";
 
-const SHOP_LINKS = {
+const DEFAULT_NAVIGATION: StorefrontNavigation = {
   top: [
     { label: "All Products", href: "/products" },
     { label: "Bestsellers", href: "/products?sort=bestsellers" },
     { label: "New Arrivals", href: "/products?sort=new" },
   ],
   concerns: [
-    { label: "Brightening", href: "/products?category=Brightening+Moisturiser" },
-    { label: "Hydration", href: "/products?category=Hydration+Serum" },
-    { label: "Anti-Ageing", href: "/products?category=Overnight+Treatment" },
-    { label: "SPF Protection", href: "/products?category=UV+Protection" },
-    { label: "Eye Care", href: "/products?category=Eye+Treatment" },
-    { label: "Targeted Treatment", href: "/products?category=Targeted+Treatment" },
+    { label: "Brightening", href: "/products?concern=brightening-moisturiser" },
+    { label: "Hydration", href: "/products?concern=hydration-serum" },
+    { label: "Anti-Ageing", href: "/products?concern=overnight-treatment" },
+    { label: "SPF Protection", href: "/products?concern=uv-protection" },
+    { label: "Eye Care", href: "/products?concern=eye-treatment" },
+    { label: "Targeted Treatment", href: "/products?concern=targeted-treatment" },
+  ],
+  brands: [
+    { label: "Lumiere Atelier", href: "/products?brand=lumiere-atelier" },
+    { label: "Botan Botanics", href: "/products?brand=botan-botanics" },
+    { label: "Clinis Lab", href: "/products?brand=clinis-lab" },
+    { label: "Velour Skin", href: "/products?brand=velour-skin" },
+    { label: "Verdant", href: "/products?brand=verdant" },
+    { label: "Eclat London", href: "/products?brand=eclat-london" },
   ],
 };
 
-const BRAND_LINKS = [
-  { label: "Lumière Atelier", href: "/brands/lumiere-atelier" },
-  { label: "Botan Botanics", href: "/brands/botan-botanics" },
-  { label: "Clinis Lab", href: "/brands/clinis-lab" },
-  { label: "Velour Skin", href: "/brands/velour-skin" },
-  { label: "Verdant", href: "/brands/verdant" },
-  { label: "Éclat London", href: "/brands/eclat-london" },
-];
+function normalizeLinks(value: unknown): StorefrontNavLink[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((entry) => {
+      if (!entry || typeof entry !== "object") {
+        return null;
+      }
+
+      const label = "label" in entry && typeof entry.label === "string" ? entry.label.trim() : "";
+      const href = "href" in entry && typeof entry.href === "string" ? entry.href.trim() : "";
+      if (!label || !href) {
+        return null;
+      }
+
+      return { label, href };
+    })
+    .filter((entry): entry is StorefrontNavLink => entry !== null);
+}
 
 export default function Header() {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -35,6 +57,7 @@ export default function Header() {
   const [hidden, setHidden] = useState(false);
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
   const [mobileExpanded, setMobileExpanded] = useState<string | null>(null);
+  const [navigation, setNavigation] = useState<StorefrontNavigation>(DEFAULT_NAVIGATION);
   const dropdownTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -56,6 +79,39 @@ export default function Header() {
     document.body.style.overflow = menuOpen ? "hidden" : "";
     return () => { document.body.style.overflow = ""; };
   }, [menuOpen]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+
+    async function hydrateNavigation(): Promise<void> {
+      try {
+        const response = await fetch("/api/storefront/navigation", {
+          cache: "no-store",
+          signal: controller.signal,
+        });
+
+        if (!response.ok) {
+          return;
+        }
+
+        const payload = (await response.json()) as Partial<StorefrontNavigation>;
+        const top = normalizeLinks(payload.top);
+        const concerns = normalizeLinks(payload.concerns);
+        const brands = normalizeLinks(payload.brands);
+
+        setNavigation({
+          top: top.length > 0 ? top : DEFAULT_NAVIGATION.top,
+          concerns: concerns.length > 0 ? concerns : DEFAULT_NAVIGATION.concerns,
+          brands: brands.length > 0 ? brands : DEFAULT_NAVIGATION.brands,
+        });
+      } catch {
+        // Keep static fallback navigation when API fetch fails.
+      }
+    }
+
+    void hydrateNavigation();
+    return () => controller.abort();
+  }, []);
 
   const openDropdown = (name: string) => {
     if (dropdownTimeout.current) clearTimeout(dropdownTimeout.current);
@@ -141,7 +197,7 @@ export default function Header() {
                   onMouseLeave={closeDropdown}
                 >
                   <div className="navbar-dropdown-col">
-                    {SHOP_LINKS.top.map((link) => (
+                    {navigation.top.map((link) => (
                       <Link key={link.href} href={link.href} className="navbar-dropdown-link" onClick={closeAll}>
                         {link.label}
                       </Link>
@@ -151,7 +207,7 @@ export default function Header() {
                   <div className="navbar-dropdown-col">
                     <span className="navbar-dropdown-label superscript">By Concern</span>
                     <div className="navbar-dropdown-concerns">
-                      {SHOP_LINKS.concerns.map((link) => (
+                      {navigation.concerns.map((link) => (
                         <Link key={link.href} href={link.href} className="navbar-dropdown-link navbar-dropdown-link--sm" onClick={closeAll}>
                           {link.label}
                         </Link>
@@ -163,13 +219,13 @@ export default function Header() {
                 {/* Mobile accordion */}
                 <div className={`navbar-accordion-panel d-md-none${mobileExpanded === "shop" ? " is-open" : ""}`}>
                   <div className="navbar-accordion-inner">
-                    {SHOP_LINKS.top.map((link) => (
+                    {navigation.top.map((link) => (
                       <Link key={link.href} href={link.href} className="navbar-accordion-link" onClick={closeAll}>
                         {link.label}
                       </Link>
                     ))}
                     <span className="navbar-accordion-sublabel superscript">By Concern</span>
-                    {SHOP_LINKS.concerns.map((link) => (
+                    {navigation.concerns.map((link) => (
                       <Link key={link.href} href={link.href} className="navbar-accordion-link navbar-accordion-link--sm" onClick={closeAll}>
                         {link.label}
                       </Link>
@@ -212,13 +268,13 @@ export default function Header() {
                   onMouseLeave={closeDropdown}
                 >
                   <div className="navbar-dropdown-col">
-                    {BRAND_LINKS.map((link) => (
+                    {navigation.brands.map((link) => (
                       <Link key={link.href} href={link.href} className="navbar-dropdown-link" onClick={closeAll}>
                         {link.label}
                       </Link>
                     ))}
                     <div className="navbar-dropdown-divider" />
-                    <Link href="/brands" className="navbar-dropdown-link navbar-dropdown-link--view-all" onClick={closeAll}>
+                    <Link href="/products" className="navbar-dropdown-link navbar-dropdown-link--view-all" onClick={closeAll}>
                       View All Brands →
                     </Link>
                   </div>
@@ -227,12 +283,12 @@ export default function Header() {
                 {/* Mobile accordion */}
                 <div className={`navbar-accordion-panel d-md-none${mobileExpanded === "brands" ? " is-open" : ""}`}>
                   <div className="navbar-accordion-inner">
-                    {BRAND_LINKS.map((link) => (
+                    {navigation.brands.map((link) => (
                       <Link key={link.href} href={link.href} className="navbar-accordion-link" onClick={closeAll}>
                         {link.label}
                       </Link>
                     ))}
-                    <Link href="/brands" className="navbar-accordion-link navbar-accordion-link--sm" onClick={closeAll}>
+                    <Link href="/products" className="navbar-accordion-link navbar-accordion-link--sm" onClick={closeAll}>
                       View All Brands
                     </Link>
                   </div>

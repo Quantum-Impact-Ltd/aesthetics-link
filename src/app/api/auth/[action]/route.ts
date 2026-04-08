@@ -3,6 +3,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { getWooStoreBaseUrl } from "@/lib/storefront/config";
 
 const SESSION_COOKIE = "al_session_token";
+const WOO_CART_TOKEN_COOKIE = "woo_cart_token";
+const WOO_NONCE_TOKEN_COOKIE = "woo_nonce_token";
 const AUTH_ENDPOINT_PREFIX = "/wp-json/aesthetics-link/v1/auth";
 
 type Action =
@@ -67,7 +69,15 @@ async function handler(req: NextRequest, context: RouteContextParams): Promise<N
 
   const sessionToken = req.cookies.get(SESSION_COOKIE)?.value;
 
-  if ((maybeAction === "me" || maybeAction === "logout" || maybeAction === "wholesale-prices") && !sessionToken) {
+  if (maybeAction === "logout" && !sessionToken) {
+    const response = NextResponse.json({ ok: true });
+    response.cookies.delete(SESSION_COOKIE);
+    response.cookies.delete(WOO_CART_TOKEN_COOKIE);
+    response.cookies.delete(WOO_NONCE_TOKEN_COOKIE);
+    return response;
+  }
+
+  if ((maybeAction === "me" || maybeAction === "wholesale-prices") && !sessionToken) {
     return NextResponse.json({ message: "Not authenticated." }, { status: 401 });
   }
 
@@ -120,6 +130,11 @@ async function handler(req: NextRequest, context: RouteContextParams): Promise<N
 
   const response = NextResponse.json(upstreamPayload, { status: upstream.status });
 
+  const clearWooCartSession = (): void => {
+    response.cookies.delete(WOO_CART_TOKEN_COOKIE);
+    response.cookies.delete(WOO_NONCE_TOKEN_COOKIE);
+  };
+
   if ((maybeAction === "login" || maybeAction === "register" || maybeAction === "verify-email") && upstream.ok) {
     const token = upstreamPayload.session_token;
     if (typeof token === "string" && token.length > 20) {
@@ -129,10 +144,16 @@ async function handler(req: NextRequest, context: RouteContextParams): Promise<N
         ...cookieOptions(),
       });
     }
+
+    if (maybeAction === "login" || maybeAction === "verify-email") {
+      // Prevent cart/session leakage when switching accounts in the same browser.
+      clearWooCartSession();
+    }
   }
 
   if (maybeAction === "logout" && upstream.ok) {
     response.cookies.delete(SESSION_COOKIE);
+    clearWooCartSession();
   }
 
   if (maybeAction === "me" && upstream.status === 401) {

@@ -6,32 +6,32 @@ const CONCERNS = [
   {
     label: "Brightening",
     icon: "/images/icon-clean-beyond-reproach.svg",
-    href: "/products?category=Brightening+Moisturiser",
+    href: "/products?concern=brightening-moisturiser",
   },
   {
     label: "Hydration",
     icon: "/images/icon-potent-multi-tasking.svg",
-    href: "/products?category=Hydration+Serum",
+    href: "/products?concern=hydration-serum",
   },
   {
     label: "Anti-Ageing",
     icon: "/images/icon-real-results.svg",
-    href: "/products?category=Overnight+Treatment",
+    href: "/products?concern=overnight-treatment",
   },
   {
     label: "SPF Protection",
     icon: "/images/icon-highest-standards.svg",
-    href: "/products?category=UV+Protection",
+    href: "/products?concern=uv-protection",
   },
   {
     label: "Eye Care",
     icon: "/images/icon-radical-transparency.svg",
-    href: "/products?category=Eye+Treatment",
+    href: "/products?concern=eye-treatment",
   },
   {
     label: "Targeted Treatment",
     icon: "/images/icon-conscious-responsible.svg",
-    href: "/products?category=Targeted+Treatment",
+    href: "/products?concern=targeted-treatment",
   },
 ] as const;
 

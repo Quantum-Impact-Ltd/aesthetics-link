@@ -45,6 +45,10 @@ Copy `.env.example` to `.env.local` and set:
 
 ```bash
 WOOCOMMERCE_STORE_URL=https://checkout.yourdomain.com
+WOO_CONCERN_ROOT_SLUGS=concerns,concern,skin-concerns
+WOO_BRAND_ROOT_SLUGS=brands,brand
+WOO_BESTSELLER_SLUGS=bestseller,bestsellers
+WOO_NEW_ARRIVAL_SLUGS=new,new-arrival,new-arrivals
 NEXT_PUBLIC_WOOCOMMERCE_CHECKOUT_URL=https://checkout.yourdomain.com/checkout
 WOOCOMMERCE_CHECKOUT_BRIDGE_SECRET=replace-with-strong-random-secret
 REVALIDATE_SECRET=replace-with-strong-random-secret
@@ -63,6 +67,7 @@ Use the WordPress site URL (the one that serves `/wp-json/wc/store/v1/...`).
 
 - Product listing page (`/products`) uses live Woo products.
 - Product detail page (`/products/[slug]`) uses live Woo product data.
+- Header shop navigation (top links, by concern, by brand) is fetched dynamically from Woo categories.
 - Add-to-cart uses Woo `cart/add-item`.
 - Cart page (`/cart`) uses Woo cart totals and line items.
 - Checkout button uses `/api/checkout/bridge` to sync cart into Woo session, then redirects to native Woo checkout.
@@ -78,6 +83,26 @@ Use the WordPress site URL (the one that serves `/wp-json/wc/store/v1/...`).
 - Native Woo checkout handles Stripe and other gateway-specific flows.
 - Recommended architecture is same apex domain, e.g. `www.yourdomain.com` + `checkout.yourdomain.com`.
 - On Woo/WordPress side, set `AL_B2B_CHECKOUT_BRIDGE_SECRET` to the same value as `WOOCOMMERCE_CHECKOUT_BRIDGE_SECRET`.
+- Keep Woo category trees as `concerns -> child concern terms` and `brands -> child brand terms`.
+- `WOO_BESTSELLER_SLUGS` and `WOO_NEW_ARRIVAL_SLUGS` map header sort links to term slugs when present.
+
+### 3.1) Woo category setup for dynamic header/queries
+
+1. Create parent product categories:
+`concerns` (slug `concerns`) and `brands` (slug `brands`).
+2. Under `concerns`, create child categories for each concern you want in header.
+3. Under `brands`, create child categories for each brand you want in header.
+4. Assign products to those child categories.
+5. Optional: create merchandising categories like `bestseller` and `new-arrival`, then assign products.
+6. Match env values to your real slugs in `WOO_CONCERN_ROOT_SLUGS`, `WOO_BRAND_ROOT_SLUGS`, `WOO_BESTSELLER_SLUGS`, and `WOO_NEW_ARRIVAL_SLUGS`.
+
+Query patterns now supported on `/products`:
+
+- `?concern=<child-category-slug>`
+- `?brand=<child-category-slug>`
+- `?category=<category-slug>`
+- `?sort=bestsellers`
+- `?sort=new`
 
 ### 4) Auth and B2B Workflow Backend
 

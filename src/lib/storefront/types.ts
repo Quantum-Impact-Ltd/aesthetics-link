@@ -6,6 +6,8 @@ export type StorefrontCatalogProduct = {
   name: string;
   shortName: string;
   category: string;
+  categorySlug: string;
+  categorySlugs: string[];
   tagline: string;
   description: string;
   price: string;
@@ -16,6 +18,17 @@ export type StorefrontCatalogProduct = {
   image: string;
   imageAlt: string;
   accentBg: string;
+};
+
+export type StorefrontNavLink = {
+  label: string;
+  href: string;
+};
+
+export type StorefrontNavigation = {
+  top: StorefrontNavLink[];
+  concerns: StorefrontNavLink[];
+  brands: StorefrontNavLink[];
 };
 
 export type StorefrontCartItem = {

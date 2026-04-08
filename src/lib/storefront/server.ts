@@ -2,7 +2,11 @@ import "server-only";
 
 import { getProductBySlug, products as fallbackProducts, type Product } from "@/data/products";
 import { getWooStoreBaseUrl } from "@/lib/storefront/config";
-import type { StorefrontCatalogProduct, StorefrontDetailProduct } from "@/lib/storefront/types";
+import type {
+  StorefrontCatalogProduct,
+  StorefrontDetailProduct,
+  StorefrontNavigation,
+} from "@/lib/storefront/types";
 
 type WooImage = {
   src?: string;
@@ -10,7 +14,17 @@ type WooImage = {
 };
 
 type WooProductCategory = {
+  id?: number;
   name?: string;
+  slug?: string;
+};
+
+type WooCategory = {
+  id: number;
+  name: string;
+  slug: string;
+  parent: number;
+  count?: number;
 };
 
 type WooProductPrices = {
@@ -36,6 +50,27 @@ type WooProduct = {
 };
 
 const ACCENT_COLORS = ["#F1CCCF", "#D8D0C4", "#D3E5EF", "#E8DFC8"];
+const DEFAULT_NAV_TOP = [
+  { label: "All Products", href: "/products" },
+  { label: "Bestsellers", href: "/products?sort=bestsellers" },
+  { label: "New Arrivals", href: "/products?sort=new" },
+];
+const DEFAULT_NAV_CONCERNS = [
+  { label: "Brightening", href: "/products?concern=brightening-moisturiser" },
+  { label: "Hydration", href: "/products?concern=hydration-serum" },
+  { label: "Anti-Ageing", href: "/products?concern=overnight-treatment" },
+  { label: "SPF Protection", href: "/products?concern=uv-protection" },
+  { label: "Eye Care", href: "/products?concern=eye-treatment" },
+  { label: "Targeted Treatment", href: "/products?concern=targeted-treatment" },
+];
+const DEFAULT_NAV_BRANDS = [
+  { label: "Lumiere Atelier", href: "/products?brand=lumiere-atelier" },
+  { label: "Botan Botanics", href: "/products?brand=botan-botanics" },
+  { label: "Clinis Lab", href: "/products?brand=clinis-lab" },
+  { label: "Velour Skin", href: "/products?brand=velour-skin" },
+  { label: "Verdant", href: "/products?brand=verdant" },
+  { label: "Eclat London", href: "/products?brand=eclat-london" },
+];
 
 function decodeEntities(value: string): string {
   return value
@@ -49,6 +84,13 @@ function decodeEntities(value: string): string {
     .replace(/&pound;/g, "£")
     .replace(/&dollar;/g, "$")
     .replace(/&euro;/g, "€");
+}
+
+function slugify(value: string): string {
+  return decodeEntities(value)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
 }
 
 function stripHtml(value: string): string {
@@ -117,6 +159,8 @@ function toCatalogFallback(): StorefrontCatalogProduct[] {
     name: product.name,
     shortName: product.shortName,
     category: product.category,
+    categorySlug: slugify(product.category),
+    categorySlugs: [slugify(product.category)],
     tagline: product.tagline,
     description: product.description,
     price: product.price,
@@ -129,6 +173,12 @@ function toCatalogFallback(): StorefrontCatalogProduct[] {
 
 function mapWooToCatalogProduct(product: WooProduct, index: number): StorefrontCatalogProduct {
   const fallback = getProductBySlug(product.slug);
+  const firstCategoryName = product.categories?.[0]?.name ?? fallback?.category ?? "Skincare";
+  const firstCategorySlug = product.categories?.[0]?.slug ?? slugify(firstCategoryName);
+  const categorySlugs = (product.categories ?? [])
+    .map((category) => category.slug ?? slugify(category.name ?? ""))
+    .filter((value) => value.length > 0);
+  const uniqueCategorySlugs = Array.from(new Set(categorySlugs.length > 0 ? categorySlugs : [firstCategorySlug]));
   const description =
     stripHtml(product.short_description ?? product.description ?? "") ||
     fallback?.description ||
@@ -139,7 +189,9 @@ function mapWooToCatalogProduct(product: WooProduct, index: number): StorefrontC
     slug: product.slug,
     name: product.name,
     shortName: fallback?.shortName ?? toShortName(product.name),
-    category: product.categories?.[0]?.name ?? fallback?.category ?? "Skincare",
+    category: firstCategoryName,
+    categorySlug: firstCategorySlug,
+    categorySlugs: uniqueCategorySlugs,
     tagline: fallback?.tagline ?? toSentence(description),
     description,
     price: toPriceLabel(product.prices) || fallback?.price || "",
@@ -187,6 +239,124 @@ async function fetchWooProducts(params: Record<string, string>): Promise<WooProd
   }
 
   return (await response.json()) as WooProduct[];
+}
+
+function defaultNavigation(): StorefrontNavigation {
+  return {
+    top: DEFAULT_NAV_TOP,
+    concerns: DEFAULT_NAV_CONCERNS,
+    brands: DEFAULT_NAV_BRANDS,
+  };
+}
+
+async function fetchWooCategories(): Promise<WooCategory[] | null> {
+  const baseUrl = getWooStoreBaseUrl();
+  if (!baseUrl) {
+    return null;
+  }
+
+  const url = new URL("/wp-json/wc/store/v1/products/categories", baseUrl);
+  const response = await fetch(url.toString(), {
+    headers: {
+      Accept: "application/json",
+    },
+    next: {
+      revalidate: 300,
+      tags: ["woo:categories"],
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Woo category request failed (${response.status})`);
+  }
+
+  return (await response.json()) as WooCategory[];
+}
+
+function parseRootSlugs(value: string | undefined, fallback: string[]): string[] {
+  const raw = value?.trim();
+  if (!raw) {
+    return fallback;
+  }
+
+  const normalized = raw
+    .split(",")
+    .map((part) => part.trim().toLowerCase())
+    .filter(Boolean);
+  return normalized.length > 0 ? normalized : fallback;
+}
+
+function buildFilterHref(key: "concern" | "brand", slug: string): string {
+  return `/products?${key}=${encodeURIComponent(slug)}`;
+}
+
+export async function getStorefrontNavigation(): Promise<StorefrontNavigation> {
+  try {
+    const categories = await fetchWooCategories();
+    if (!categories || categories.length === 0) {
+      return defaultNavigation();
+    }
+
+    const concernRootSlugs = parseRootSlugs(process.env.WOO_CONCERN_ROOT_SLUGS, [
+      "concerns",
+      "concern",
+      "skin-concerns",
+      "skin-concern",
+    ]);
+    const brandRootSlugs = parseRootSlugs(process.env.WOO_BRAND_ROOT_SLUGS, ["brands", "brand"]);
+
+    const concernRootIds = new Set(
+      categories.filter((category) => concernRootSlugs.includes(category.slug.toLowerCase())).map((category) => category.id),
+    );
+    const brandRootIds = new Set(
+      categories.filter((category) => brandRootSlugs.includes(category.slug.toLowerCase())).map((category) => category.id),
+    );
+
+    let concerns = categories
+      .filter((category) => concernRootIds.has(category.parent) && (category.count ?? 0) > 0)
+      .map((category) => ({
+        label: category.name,
+        href: buildFilterHref("concern", category.slug),
+      }));
+
+    const brands = categories
+      .filter((category) => brandRootIds.has(category.parent) && (category.count ?? 0) > 0)
+      .map((category) => ({
+        label: category.name,
+        href: buildFilterHref("brand", category.slug),
+      }));
+
+    if (concerns.length === 0) {
+      const excluded = new Set<number>([...concernRootIds, ...brandRootIds]);
+      for (const category of categories) {
+        if (excluded.has(category.id)) {
+          continue;
+        }
+
+        if (brandRootIds.has(category.parent)) {
+          continue;
+        }
+
+        const hasChildren = categories.some((candidate) => candidate.parent === category.id);
+        if (hasChildren || (category.count ?? 0) <= 0) {
+          continue;
+        }
+
+        concerns.push({
+          label: category.name,
+          href: buildFilterHref("concern", category.slug),
+        });
+      }
+    }
+
+    return {
+      top: DEFAULT_NAV_TOP,
+      concerns: concerns.slice(0, 8),
+      brands: brands.length > 0 ? brands.slice(0, 12) : DEFAULT_NAV_BRANDS,
+    };
+  } catch {
+    return defaultNavigation();
+  }
 }
 
 function defaultDetailFromWoo(product: WooProduct): Product {

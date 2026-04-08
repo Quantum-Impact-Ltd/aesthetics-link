@@ -175,14 +175,16 @@ function ShopCard({
     }
 
     setLoading(true);
+    setAdded(true);
     try {
       await onAddToCart(product);
-      setAdded(true);
+    } catch {
+      setAdded(false);
+    } finally {
       if (timerRef.current) {
         clearTimeout(timerRef.current);
       }
       timerRef.current = setTimeout(() => setAdded(false), 1800);
-    } finally {
       setLoading(false);
     }
   };
@@ -268,10 +270,19 @@ export default function ProductsClient({
   });
   const [cartBusy, setCartBusy] = useState(false);
 
-  const categories = useMemo(
-    () => ["All", ...new Set(products.map((product) => product.category))],
-    [products],
-  );
+  const categories = useMemo(() => {
+    const deduped = new Map<string, string>();
+    for (const product of products) {
+      if (!deduped.has(product.categorySlug)) {
+        deduped.set(product.categorySlug, product.category);
+      }
+    }
+
+    return [
+      { slug: "all", label: "All" },
+      ...Array.from(deduped.entries()).map(([slug, label]) => ({ slug, label })),
+    ];
+  }, [products]);
 
   useEffect(() => {
     void refreshCart();
@@ -280,6 +291,10 @@ export default function ProductsClient({
   useEffect(() => {
     setProducts(initialProducts);
   }, [initialProducts]);
+
+  useEffect(() => {
+    setActiveFilter(initialCategory);
+  }, [initialCategory]);
 
   useEffect(() => {
     let active = true;
@@ -373,30 +388,33 @@ export default function ProductsClient({
   }, [initialProducts]);
 
   useEffect(() => {
-    if (!categories.includes(activeFilter)) {
-      setActiveFilter("All");
+    if (!categories.some((category) => category.slug === activeFilter)) {
+      setActiveFilter("all");
     }
   }, [categories, activeFilter]);
 
   const filtered =
-    activeFilter === "All"
+    activeFilter === "all"
       ? products
-      : products.filter((product) => product.category === activeFilter);
+      : products.filter(
+          (product) =>
+            product.categorySlug === activeFilter || product.categorySlugs.includes(activeFilter),
+        );
 
   async function refreshCart(): Promise<void> {
     const nextCart = await fetchCart();
     setCart(nextCart);
   }
 
-  async function withCartMutation(action: () => Promise<void>): Promise<void> {
+  async function withCartMutation(action: () => Promise<StorefrontCart>): Promise<void> {
     if (cartBusy) {
       return;
     }
 
     setCartBusy(true);
     try {
-      await action();
-      await refreshCart();
+      const nextCart = await action();
+      setCart(nextCart);
     } finally {
       setCartBusy(false);
     }
@@ -404,21 +422,15 @@ export default function ProductsClient({
 
   async function handleAddToCart(product: StorefrontCatalogProduct): Promise<void> {
     setCartOpen(true);
-    await withCartMutation(async () => {
-      await addCartItem(product.id, 1);
-    });
+    await withCartMutation(() => addCartItem(product.id, 1));
   }
 
   async function handleRemoveFromCart(key: string): Promise<void> {
-    await withCartMutation(async () => {
-      await removeCartItem(key);
-    });
+    await withCartMutation(() => removeCartItem(key));
   }
 
   async function handleUpdateQty(key: string, nextQty: number): Promise<void> {
-    await withCartMutation(async () => {
-      await updateCartItemQuantity(key, nextQty);
-    });
+    await withCartMutation(() => updateCartItemQuantity(key, nextQty));
   }
 
   const cartCount = cart.itemCount;
@@ -481,12 +493,12 @@ export default function ProductsClient({
               </h3>
               <ul className="shop-sidebar__list" role="group" aria-label="Filter products">
                 {categories.map((category) => (
-                  <li key={category}>
+                  <li key={category.slug}>
                     <button
-                      className={`shop-sidebar__link${activeFilter === category ? " active" : ""}`}
-                      onClick={() => setActiveFilter(category)}
+                      className={`shop-sidebar__link${activeFilter === category.slug ? " active" : ""}`}
+                      onClick={() => setActiveFilter(category.slug)}
                     >
-                      {category}
+                      {category.label}
                     </button>
                   </li>
                 ))}
@@ -511,7 +523,7 @@ export default function ProductsClient({
               ) : (
                 <div className="shop-empty">
                   <p>No products found in this category.</p>
-                  <button className="btn" onClick={() => setActiveFilter("All")}>
+                  <button className="btn" onClick={() => setActiveFilter("all")}>
                     View all products
                   </button>
                 </div>
