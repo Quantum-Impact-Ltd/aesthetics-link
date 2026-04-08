@@ -10,8 +10,6 @@ import MotionProvider from "@/components/MotionProvider";
 import { getMe, logout } from "@/lib/auth/client";
 import type { AuthUser } from "@/lib/auth/types";
 
-const ACCOUNT_URL = process.env.NEXT_PUBLIC_WOOCOMMERCE_ACCOUNT_URL?.trim() ?? "";
-
 export default function ProfilePage() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -179,17 +177,6 @@ export default function ProfilePage() {
                 <Link href="/products" className="btn">
                   Continue Shopping
                 </Link>
-                {ACCOUNT_URL ? (
-                  <a
-                    href={ACCOUNT_URL}
-                    className="btn"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    style={{ background: "transparent", color: "var(--color-text)" }}
-                  >
-                    Open Woo Account
-                  </a>
-                ) : null}
                 <button
                   type="button"
                   className="btn"

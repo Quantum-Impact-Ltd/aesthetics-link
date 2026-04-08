@@ -50,10 +50,9 @@ REVALIDATE_SECRET=replace-with-strong-random-secret
 WOOCOMMERCE_WEBHOOK_SECRET=replace-with-woocommerce-webhook-secret
 ```
 
-Optional (recommended for reset/account links in frontend):
+Optional:
 
 ```bash
-NEXT_PUBLIC_WOOCOMMERCE_ACCOUNT_URL=https://checkout.yourdomain.com/my-account
 NEXT_PUBLIC_TURNSTILE_SITE_KEY=your-cloudflare-turnstile-site-key
 ```
 
@@ -69,6 +68,7 @@ Use the WordPress site URL (the one that serves `/wp-json/wc/store/v1/...`).
 - Login (`/login`), Sign up (`/signup`), and Profile (`/profile`) are wired to `app/api/auth/[action]/route.ts`.
 - Verification (`/verify-email`), forgot password (`/forgot-password`), and reset password (`/reset-password`) are wired.
 - Clinic/B2B registrations submit business data and default to `clinic_pending` role/status until admin approval.
+- Frontend account flows stay on Next.js; Woo subdomain is used for checkout only.
 
 ### 3) Notes
 
