@@ -3,6 +3,7 @@
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import MotionProvider from "@/components/MotionProvider";
+import { getMe, getWholesalePrices } from "@/lib/auth/client";
 import {
   addCartItem,
   fetchCart,
@@ -150,14 +151,22 @@ function CartSidebar({
 
 function ShopCard({
   product,
+  isWholesaleViewer,
   onAddToCart,
 }: {
   product: StorefrontCatalogProduct;
+  isWholesaleViewer: boolean;
   onAddToCart: (product: StorefrontCatalogProduct) => Promise<void>;
 }) {
   const [added, setAdded] = useState(false);
   const [loading, setLoading] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const canSeeWholesalePrice = isWholesaleViewer && product.priceSource === "wholesale";
+  const visiblePrice = canSeeWholesalePrice ? product.price : product.retailPrice ?? product.price;
+  const visibleRegularPrice =
+    canSeeWholesalePrice && product.hasDiscount && product.regularPrice && product.regularPrice !== product.price
+      ? product.regularPrice
+      : null;
 
   const handleAdd = async (event: React.MouseEvent) => {
     event.preventDefault();
@@ -196,7 +205,19 @@ function ShopCard({
             <h3 className="shop-product-card__name">{product.shortName}</h3>
             <p className="shop-product-card__tagline">{product.tagline}</p>
           </div>
-          <p className="shop-product-card__price product-price">{product.price}</p>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end" }}>
+            <p className="shop-product-card__price product-price" style={{ display: "flex", gap: "0.4rem", alignItems: "center" }}>
+              {visibleRegularPrice ? (
+                <span style={{ opacity: 0.55, textDecoration: "line-through", fontSize: "0.9em" }}>{visibleRegularPrice}</span>
+              ) : null}
+              <span>{visiblePrice}</span>
+            </p>
+            {canSeeWholesalePrice ? (
+              <span style={{ fontSize: "0.66rem", textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--color-gray2)" }}>
+                Wholesale
+              </span>
+            ) : null}
+          </div>
         </div>
       </Link>
 
@@ -231,8 +252,10 @@ export default function ProductsClient({
   initialProducts: StorefrontCatalogProduct[];
   initialCategory: string;
 }) {
+  const [products, setProducts] = useState<StorefrontCatalogProduct[]>(initialProducts);
   const [activeFilter, setActiveFilter] = useState(initialCategory);
   const [cartOpen, setCartOpen] = useState(false);
+  const [isWholesaleViewer, setIsWholesaleViewer] = useState(false);
   const [cart, setCart] = useState<StorefrontCart>({
     items: [],
     itemCount: 0,
@@ -246,13 +269,108 @@ export default function ProductsClient({
   const [cartBusy, setCartBusy] = useState(false);
 
   const categories = useMemo(
-    () => ["All", ...new Set(initialProducts.map((product) => product.category))],
-    [initialProducts],
+    () => ["All", ...new Set(products.map((product) => product.category))],
+    [products],
   );
 
   useEffect(() => {
     void refreshCart();
   }, []);
+
+  useEffect(() => {
+    setProducts(initialProducts);
+  }, [initialProducts]);
+
+  useEffect(() => {
+    let active = true;
+
+    async function applyRoleAwarePricing(): Promise<void> {
+      try {
+        const me = await getMe();
+        const wholesale =
+          me.user.role === "wholesale_customer" &&
+          me.user.clinicStatus === "approved" &&
+          Boolean(me.user.wholesaleApproved);
+
+        if (!active) {
+          return;
+        }
+
+        setIsWholesaleViewer(wholesale);
+
+        if (!wholesale) {
+          setProducts((prev) =>
+            prev.map((product) => ({
+              ...product,
+              priceSource: "retail",
+              price: product.retailPrice ?? product.price,
+              regularPrice: null,
+              hasDiscount: false,
+            })),
+          );
+          return;
+        }
+
+        const ids = initialProducts
+          .map((product) => product.id)
+          .filter((id) => Number.isInteger(id) && id > 0);
+
+        if (ids.length === 0) {
+          return;
+        }
+
+        const priceResponse = await getWholesalePrices(ids);
+        if (!active) {
+          return;
+        }
+
+        setProducts((prev) =>
+          prev.map((product) => {
+            const entry = priceResponse.prices[String(product.id)];
+            if (!entry || entry.source !== "wholesale" || !priceResponse.isWholesaleViewer) {
+              return {
+                ...product,
+                priceSource: "retail",
+                price: product.retailPrice ?? product.price,
+                regularPrice: null,
+                hasDiscount: false,
+              };
+            }
+
+            return {
+              ...product,
+              retailPrice: product.retailPrice ?? product.price,
+              price: entry.priceLabel,
+              regularPrice: entry.hasDiscount ? entry.regularPriceLabel : null,
+              hasDiscount: entry.hasDiscount,
+              priceSource: "wholesale",
+            };
+          }),
+        );
+      } catch {
+        if (!active) {
+          return;
+        }
+
+        setIsWholesaleViewer(false);
+        setProducts((prev) =>
+          prev.map((product) => ({
+            ...product,
+            priceSource: "retail",
+            price: product.retailPrice ?? product.price,
+            regularPrice: null,
+            hasDiscount: false,
+          })),
+        );
+      }
+    }
+
+    void applyRoleAwarePricing();
+
+    return () => {
+      active = false;
+    };
+  }, [initialProducts]);
 
   useEffect(() => {
     if (!categories.includes(activeFilter)) {
@@ -262,8 +380,8 @@ export default function ProductsClient({
 
   const filtered =
     activeFilter === "All"
-      ? initialProducts
-      : initialProducts.filter((product) => product.category === activeFilter);
+      ? products
+      : products.filter((product) => product.category === activeFilter);
 
   async function refreshCart(): Promise<void> {
     const nextCart = await fetchCart();
@@ -382,7 +500,12 @@ export default function ProductsClient({
               {filtered.length > 0 ? (
                 <div className="shop-product-grid">
                   {filtered.map((product) => (
-                    <ShopCard key={product.slug} product={product} onAddToCart={handleAddToCart} />
+                    <ShopCard
+                      key={product.slug}
+                      product={product}
+                      isWholesaleViewer={isWholesaleViewer}
+                      onAddToCart={handleAddToCart}
+                    />
                   ))}
                 </div>
               ) : (

@@ -9,6 +9,10 @@ export type StorefrontCatalogProduct = {
   tagline: string;
   description: string;
   price: string;
+  retailPrice?: string;
+  regularPrice?: string | null;
+  priceSource?: "retail" | "wholesale";
+  hasDiscount?: boolean;
   image: string;
   imageAlt: string;
   accentBg: string;
@@ -68,4 +72,8 @@ export type StorefrontCheckoutResponse = {
   raw: unknown;
 };
 
-export type StorefrontDetailProduct = Product;
+export type StorefrontDetailProduct = Product & {
+  regularPrice?: string | null;
+  priceSource?: "retail" | "wholesale";
+  hasDiscount?: boolean;
+};

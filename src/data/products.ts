@@ -18,6 +18,10 @@ export type Product = {
   tagline: string;
   description: string;
   price: string;
+  retailPrice?: string;
+  regularPrice?: string | null;
+  priceSource?: "retail" | "wholesale";
+  hasDiscount?: boolean;
   claim: {
     headline: string;
     headlineSerif: string;

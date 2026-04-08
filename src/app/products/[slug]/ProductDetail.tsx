@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 import { useParallax } from "@/hooks/useParallax";
-import type { Product } from "@/data/products";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import MotionProvider from "@/components/MotionProvider";
-import { useState } from "react";
+import { getMe, getWholesalePrices } from "@/lib/auth/client";
+import type { StorefrontDetailProduct } from "@/lib/storefront/types";
+import { useEffect, useState } from "react";
 
 function ArrowLongIcon() {
   return (
@@ -19,12 +20,73 @@ function ArrowLongIcon() {
   );
 }
 
-export default function ProductDetail({ product }: { product: Product }) {
+export default function ProductDetail({ product }: { product: StorefrontDetailProduct }) {
   const heroImgRef = useParallax<HTMLImageElement>(0.12);
   const detailImgRef = useParallax<HTMLImageElement>(0.15);
   const textureRef = useParallax<HTMLImageElement>(0.18);
   const [adding, setAdding] = useState(false);
   const [addStatus, setAddStatus] = useState<string | null>(null);
+  const [displayPrice, setDisplayPrice] = useState(product.price);
+  const [displayRegularPrice, setDisplayRegularPrice] = useState<string | null>(product.regularPrice ?? null);
+  const [isWholesalePrice, setIsWholesalePrice] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+
+    async function applyRoleAwarePrice(): Promise<void> {
+      const retail = product.price;
+
+      try {
+        const me = await getMe();
+        const wholesale =
+          me.user.role === "wholesale_customer" &&
+          me.user.clinicStatus === "approved" &&
+          Boolean(me.user.wholesaleApproved);
+
+        if (!active) {
+          return;
+        }
+
+        if (!wholesale || !product.wooId || product.wooId <= 0) {
+          setDisplayPrice(retail);
+          setDisplayRegularPrice(null);
+          setIsWholesalePrice(false);
+          return;
+        }
+
+        const prices = await getWholesalePrices([product.wooId]);
+        if (!active) {
+          return;
+        }
+
+        const entry = prices.prices[String(product.wooId)];
+        if (!entry || entry.source !== "wholesale" || !prices.isWholesaleViewer) {
+          setDisplayPrice(retail);
+          setDisplayRegularPrice(null);
+          setIsWholesalePrice(false);
+          return;
+        }
+
+        setDisplayPrice(entry.priceLabel || retail);
+        setDisplayRegularPrice(entry.hasDiscount ? entry.regularPriceLabel : null);
+        setIsWholesalePrice(true);
+      } catch {
+        if (!active) {
+          return;
+        }
+
+        setDisplayPrice(retail);
+        setDisplayRegularPrice(null);
+        setIsWholesalePrice(false);
+      }
+    }
+
+    void applyRoleAwarePrice();
+
+    return () => {
+      active = false;
+    };
+  }, [product.price, product.wooId]);
 
   const handleAddToBag = async () => {
     if (!product.wooId || adding) {
@@ -82,7 +144,17 @@ export default function ProductDetail({ product }: { product: Product }) {
               </span>
             </h1>
             <p className="product-intro__tagline">{product.tagline}</p>
-            <p className="product-intro__price">{product.price}</p>
+            <p className="product-intro__price" style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+              {isWholesalePrice && displayRegularPrice && displayRegularPrice !== displayPrice ? (
+                <span style={{ opacity: 0.6, textDecoration: "line-through", fontSize: "0.8em" }}>{displayRegularPrice}</span>
+              ) : null}
+              <span>{displayPrice}</span>
+              {isWholesalePrice ? (
+                <span style={{ fontSize: "0.6em", letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--color-gray2)" }}>
+                  Wholesale
+                </span>
+              ) : null}
+            </p>
             <button
               type="button"
               className="btn product-intro__cta"

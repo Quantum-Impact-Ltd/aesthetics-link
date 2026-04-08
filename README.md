@@ -50,6 +50,13 @@ REVALIDATE_SECRET=replace-with-strong-random-secret
 WOOCOMMERCE_WEBHOOK_SECRET=replace-with-woocommerce-webhook-secret
 ```
 
+Optional (recommended for reset/account links in frontend):
+
+```bash
+NEXT_PUBLIC_WOOCOMMERCE_ACCOUNT_URL=https://checkout.yourdomain.com/my-account
+NEXT_PUBLIC_TURNSTILE_SITE_KEY=your-cloudflare-turnstile-site-key
+```
+
 Use the WordPress site URL (the one that serves `/wp-json/wc/store/v1/...`).
 
 ### 2) What is wired
@@ -59,6 +66,9 @@ Use the WordPress site URL (the one that serves `/wp-json/wc/store/v1/...`).
 - Add-to-cart uses Woo `cart/add-item`.
 - Cart page (`/cart`) uses Woo cart totals and line items.
 - Checkout button redirects users to native Woo checkout (`NEXT_PUBLIC_WOOCOMMERCE_CHECKOUT_URL`).
+- Login (`/login`), Sign up (`/signup`), and Profile (`/profile`) are wired to `app/api/auth/[action]/route.ts`.
+- Verification (`/verify-email`), forgot password (`/forgot-password`), and reset password (`/reset-password`) are wired.
+- Clinic/B2B registrations submit business data and default to `clinic_pending` role/status until admin approval.
 
 ### 3) Notes
 
@@ -67,7 +77,47 @@ Use the WordPress site URL (the one that serves `/wp-json/wc/store/v1/...`).
 - Recommended architecture is same apex domain, e.g. `www.yourdomain.com` + `checkout.yourdomain.com`.
 - On Woo/WordPress side, configure cookies/session for subdomain compatibility (for example, `COOKIE_DOMAIN=.yourdomain.com`).
 
-### 4) Instant propagation from WooCommerce
+### 4) Auth and B2B Workflow Backend
+
+This frontend expects custom WordPress REST endpoints under:
+
+- `/wp-json/aesthetics-link/v1/auth/register`
+- `/wp-json/aesthetics-link/v1/auth/login`
+- `/wp-json/aesthetics-link/v1/auth/me`
+- `/wp-json/aesthetics-link/v1/auth/logout`
+- `/wp-json/aesthetics-link/v1/auth/request-email-verification`
+- `/wp-json/aesthetics-link/v1/auth/verify-email`
+- `/wp-json/aesthetics-link/v1/auth/request-password-reset`
+- `/wp-json/aesthetics-link/v1/auth/reset-password`
+- `/wp-json/aesthetics-link/v1/auth/wholesale-prices`
+
+Install plugin starter:
+
+- `integration/wordpress-plugin/aesthetics-link-b2b-auth/aesthetics-link-b2b-auth.php`
+
+After installation in Woo/WordPress:
+
+- Retail signups become `customer` with clinic status `approved`.
+- Clinic signups become `clinic_pending` with clinic status `pending`.
+- All signups require email verification before first login.
+- Admin reviews applications in `Users -> Clinic Applications`.
+- Approve sets role/status to `wholesale_customer` + `approved`.
+- Reject sets role/status to `customer` + `rejected`.
+
+Optional in `wp-config.php`:
+
+```php
+define('AL_B2B_FRONTEND_URL', 'https://www.yourdomain.com');
+define('AL_B2B_TURNSTILE_SECRET', 'your-cloudflare-turnstile-secret');
+```
+
+Wholesale pricing behavior:
+
+- Frontend cards/detail fetch role-aware prices via `/api/auth/wholesale-prices`.
+- Wholesale prices render only for `wholesale_customer` with `approved` clinic status.
+- Non-wholesale sessions always fall back to retail labels.
+
+### 5) Instant propagation from WooCommerce
 
 The app now supports on-demand invalidation endpoint:
 

@@ -1,0 +1,85 @@
+export type AccountType = "retail" | "clinic";
+
+export type ClinicStatus = "approved" | "pending" | "rejected" | null;
+
+export type BusinessInfo = {
+  clinicName?: string;
+  businessName?: string;
+  licenseNumber?: string;
+  taxId?: string;
+  website?: string;
+  phone?: string;
+};
+
+export type AuthUser = {
+  id: number;
+  email: string;
+  firstName: string;
+  lastName: string;
+  displayName: string;
+  role: string;
+  accountType: AccountType;
+  clinicStatus: ClinicStatus;
+  businessInfo: BusinessInfo;
+  emailVerified?: boolean;
+  wholesaleApproved?: boolean;
+};
+
+export type AuthResponse = {
+  user: AuthUser;
+  message?: string;
+  requiresApproval?: boolean;
+  requiresEmailVerification?: boolean;
+  emailDeliveryAttempted?: boolean;
+  session_token?: string;
+  ok?: boolean;
+};
+
+export type LoginPayload = {
+  email: string;
+  password: string;
+  captchaToken?: string;
+};
+
+export type RegisterPayload = {
+  firstName: string;
+  lastName: string;
+  email: string;
+  password: string;
+  accountType: AccountType;
+  businessInfo?: BusinessInfo;
+  captchaToken?: string;
+};
+
+export type RequestEmailVerificationPayload = {
+  email: string;
+  captchaToken?: string;
+};
+
+export type VerifyEmailPayload = {
+  token: string;
+};
+
+export type RequestPasswordResetPayload = {
+  email: string;
+  captchaToken?: string;
+};
+
+export type ResetPasswordPayload = {
+  token: string;
+  password: string;
+  captchaToken?: string;
+};
+
+export type WholesalePriceEntry = {
+  productId: number;
+  priceLabel: string;
+  regularPriceLabel: string;
+  hasDiscount: boolean;
+  source: "retail" | "wholesale";
+};
+
+export type WholesalePricesResponse = {
+  isWholesaleViewer: boolean;
+  prices: Record<string, WholesalePriceEntry>;
+};

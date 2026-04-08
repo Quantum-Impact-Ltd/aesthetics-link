@@ -43,7 +43,7 @@ export default function Footer() {
                   <li><Link href="/philosophy" className="link">Philosophy</Link></li>
                   <li><Link href="/gallery" className="link">Gallery</Link></li>
                   <li><Link href="/journal" className="link">Journal</Link></li>
-                  <li><Link href="/login" className="link">Sign Up/Login</Link></li>
+                  <li><Link href="/profile" className="link">Account</Link></li>
                 </ul>
               </div>
               <div className="col-md-4 col-6">

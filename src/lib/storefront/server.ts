@@ -20,6 +20,8 @@ type WooProductPrices = {
   currency_prefix?: string;
   currency_suffix?: string;
   price?: string;
+  regular_price?: string;
+  sale_price?: string;
 };
 
 type WooProduct = {
@@ -118,6 +120,7 @@ function toCatalogFallback(): StorefrontCatalogProduct[] {
     tagline: product.tagline,
     description: product.description,
     price: product.price,
+    retailPrice: product.price,
     image: product.images.hero,
     imageAlt: product.images.heroAlt,
     accentBg: product.accentBg,
@@ -140,6 +143,13 @@ function mapWooToCatalogProduct(product: WooProduct, index: number): StorefrontC
     tagline: fallback?.tagline ?? toSentence(description),
     description,
     price: toPriceLabel(product.prices) || fallback?.price || "",
+    retailPrice: toPriceLabel(product.prices) || fallback?.price || "",
+    regularPrice: toPriceLabel({
+      ...product.prices,
+      price: product.prices?.regular_price,
+    }),
+    priceSource: "retail",
+    hasDiscount: Boolean(product.prices?.sale_price && product.prices?.regular_price),
     image: product.images?.[0]?.src ?? fallback?.images.hero ?? "/images/offer.jpg",
     imageAlt: product.images?.[0]?.alt ?? fallback?.images.heroAlt ?? product.name,
     accentBg: fallback?.accentBg ?? ACCENT_COLORS[index % ACCENT_COLORS.length],
@@ -198,6 +208,12 @@ function defaultDetailFromWoo(product: WooProduct): Product {
     tagline: toSentence(description) || "Precision formulation for everyday skin health.",
     description,
     price: toPriceLabel(product.prices),
+    regularPrice: toPriceLabel({
+      ...product.prices,
+      price: product.prices?.regular_price,
+    }),
+    priceSource: "retail",
+    hasDiscount: Boolean(product.prices?.sale_price && product.prices?.regular_price),
     claim: {
       headline: "FORMULATED.",
       headlineSerif: "for results",
@@ -263,6 +279,13 @@ function mapWooToDetailProduct(product: WooProduct): StorefrontDetailProduct {
       stripHtml(product.description ?? product.short_description ?? "") ||
       fallbackOrDefault.description,
     price: toPriceLabel(product.prices) || fallbackOrDefault.price,
+    regularPrice:
+      toPriceLabel({
+        ...product.prices,
+        price: product.prices?.regular_price,
+      }) || fallbackOrDefault.regularPrice,
+    priceSource: "retail",
+    hasDiscount: Boolean(product.prices?.sale_price && product.prices?.regular_price),
     images: {
       hero: product.images?.[0]?.src ?? fallbackOrDefault.images.hero,
       heroAlt: product.images?.[0]?.alt ?? fallbackOrDefault.images.heroAlt,

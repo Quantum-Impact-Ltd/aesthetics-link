@@ -251,7 +251,7 @@ export default function Header() {
               </li>
               <li className="navbar-menu-list-item navbar-menu-list-item--mobile-account">
                 <Link
-                  href="/login"
+                  href="/profile"
                   className="navbar-link-text link"
                   onClick={closeAll}
                 >
@@ -308,7 +308,7 @@ export default function Header() {
               <div className="border-vertical d-none d-md-block" />
               <li className="navbar-menu-list-item navbar-cta-account">
                 <Link
-                  href="/login"
+                  href="/profile"
                   className="navbar-menu-list-item-link"
                   aria-label="Login"
                 >
