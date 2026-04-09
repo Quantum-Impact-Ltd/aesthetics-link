@@ -50,10 +50,6 @@ export default async function ProductsPage({ searchParams }: Props) {
     normalizeSlug(params.category) ?? normalizeSlug(params.concern) ?? normalizeSlug(params.brand);
   let catalog = await getCatalogProducts();
 
-  if (categoryFilter) {
-    catalog = catalog.filter((product) => product.categorySlugs.includes(categoryFilter));
-  }
-
   if (sort === "new") {
     const tagged = catalog.filter((product) =>
       product.categorySlugs.some((slug) => isNewArrivalSlug(slug)),
@@ -76,13 +72,17 @@ export default async function ProductsPage({ searchParams }: Props) {
           });
   }
 
-  const requestedCategory = normalizeSlug(params.category);
   const normalizedRequestedCategory =
-    typeof requestedCategory === "string" ? requestedCategory : undefined;
+    typeof categoryFilter === "string" ? categoryFilter : undefined;
 
   const initialCategory =
     normalizedRequestedCategory &&
-    catalog.some((product) => product.categorySlug === normalizedRequestedCategory)
+    catalog.some((product) => {
+      const allSlugs = [product.categorySlug, ...product.categorySlugs]
+        .map((slug) => normalizeSlug(slug))
+        .filter((slug): slug is string => Boolean(slug));
+      return allSlugs.includes(normalizedRequestedCategory);
+    })
       ? normalizedRequestedCategory
       : "all";
 

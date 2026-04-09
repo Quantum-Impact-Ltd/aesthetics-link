@@ -349,6 +349,20 @@ export default function ProductsClient({
     });
   }, [products]);
 
+  const categoryBuckets = useMemo(() => {
+    const buckets = new Map<string, StorefrontCatalogProduct[]>();
+
+    for (const entry of productCategoryIndex) {
+      for (const slug of entry.allSlugs) {
+        const existing = buckets.get(slug) ?? [];
+        existing.push(entry.product);
+        buckets.set(slug, existing);
+      }
+    }
+
+    return buckets;
+  }, [productCategoryIndex]);
+
   const categories = useMemo(() => {
     const deduped = new Map<string, string>();
 
@@ -483,13 +497,7 @@ export default function ProductsClient({
   const filtered =
     normalizedActiveFilter === "all"
       ? products
-      : productCategoryIndex
-          .filter(
-            (entry) =>
-              entry.primarySlug === normalizedActiveFilter ||
-              entry.allSlugs.includes(normalizedActiveFilter),
-          )
-          .map((entry) => entry.product);
+      : categoryBuckets.get(normalizedActiveFilter) ?? products;
 
   async function refreshCart(): Promise<void> {
     const nextCart = await fetchCart();
