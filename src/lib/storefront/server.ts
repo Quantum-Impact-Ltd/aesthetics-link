@@ -5,6 +5,7 @@ import { getWooStoreBaseUrl } from "@/lib/storefront/config";
 import type {
   StorefrontCatalogProduct,
   StorefrontDetailProduct,
+  StorefrontNavLink,
   StorefrontNavigation,
 } from "@/lib/storefront/types";
 
@@ -38,6 +39,11 @@ type WooProductPrices = {
   sale_price?: string;
 };
 
+type WooAddToCart = {
+  text?: string;
+  description?: string;
+};
+
 type WooProduct = {
   id: number;
   slug: string;
@@ -47,6 +53,10 @@ type WooProduct = {
   images?: WooImage[];
   categories?: WooProductCategory[];
   prices?: WooProductPrices;
+  is_in_stock?: boolean;
+  is_purchasable?: boolean;
+  stock_status?: string;
+  add_to_cart?: WooAddToCart;
 };
 
 const ACCENT_COLORS = ["#F1CCCF", "#D8D0C4", "#D3E5EF", "#E8DFC8"];
@@ -98,6 +108,47 @@ function stripHtml(value: string): string {
     .replace(/<[^>]*>/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function normalizeWhitespace(value: string): string {
+  return value.replace(/\s+/g, " ").trim();
+}
+
+function isWooProductInStock(product: WooProduct): boolean {
+  if (typeof product.is_in_stock === "boolean") {
+    return product.is_in_stock;
+  }
+
+  const rawStatus = product.stock_status?.trim().toLowerCase();
+  if (rawStatus) {
+    return rawStatus !== "outofstock";
+  }
+
+  if (typeof product.is_purchasable === "boolean") {
+    return product.is_purchasable;
+  }
+
+  return true;
+}
+
+function getWooStockStatus(product: WooProduct): string {
+  return (product.stock_status?.trim().toLowerCase() || (isWooProductInStock(product) ? "instock" : "outofstock"));
+}
+
+function getWooStockMessage(product: WooProduct): string | null {
+  if (isWooProductInStock(product)) {
+    return null;
+  }
+
+  const fromApi = normalizeWhitespace(
+    decodeEntities(product.add_to_cart?.description ?? "").replace(/<[^>]*>/g, " "),
+  );
+
+  if (!fromApi) {
+    return "Out of stock";
+  }
+
+  return fromApi;
 }
 
 function toSentence(value: string): string {
@@ -165,6 +216,9 @@ function toCatalogFallback(): StorefrontCatalogProduct[] {
     description: product.description,
     price: product.price,
     retailPrice: product.price,
+    inStock: true,
+    stockStatus: "instock",
+    stockMessage: null,
     image: product.images.hero,
     imageAlt: product.images.heroAlt,
     accentBg: product.accentBg,
@@ -183,6 +237,9 @@ function mapWooToCatalogProduct(product: WooProduct, index: number): StorefrontC
     stripHtml(product.short_description ?? product.description ?? "") ||
     fallback?.description ||
     "High-performance skincare, formulated without compromise.";
+  const inStock = isWooProductInStock(product);
+  const stockStatus = getWooStockStatus(product);
+  const stockMessage = getWooStockMessage(product);
 
   return {
     id: product.id,
@@ -202,6 +259,9 @@ function mapWooToCatalogProduct(product: WooProduct, index: number): StorefrontC
     }),
     priceSource: "retail",
     hasDiscount: Boolean(product.prices?.sale_price && product.prices?.regular_price),
+    inStock,
+    stockStatus,
+    stockMessage,
     image: product.images?.[0]?.src ?? fallback?.images.hero ?? "/images/offer.jpg",
     imageAlt: product.images?.[0]?.alt ?? fallback?.images.heroAlt ?? product.name,
     accentBg: fallback?.accentBg ?? ACCENT_COLORS[index % ACCENT_COLORS.length],
@@ -273,21 +333,68 @@ async function fetchWooCategories(): Promise<WooCategory[] | null> {
   return (await response.json()) as WooCategory[];
 }
 
-function parseRootSlugs(value: string | undefined, fallback: string[]): string[] {
-  const raw = value?.trim();
-  if (!raw) {
-    return fallback;
-  }
-
-  const normalized = raw
-    .split(",")
-    .map((part) => part.trim().toLowerCase())
-    .filter(Boolean);
-  return normalized.length > 0 ? normalized : fallback;
-}
-
 function buildFilterHref(key: "concern" | "brand", slug: string): string {
   return `/products?${key}=${encodeURIComponent(slug)}`;
+}
+
+function normalizeMatchToken(value: string): string {
+  return decodeEntities(value)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function categoryMatchesKeywords(category: WooCategory, keywords: string[]): boolean {
+  if (keywords.length === 0) {
+    return false;
+  }
+
+  const haystack = `${normalizeMatchToken(category.slug)} ${normalizeMatchToken(category.name)}`;
+  return keywords.some((keyword) => haystack.includes(keyword));
+}
+
+function hasChildren(categories: WooCategory[], categoryId: number): boolean {
+  return categories.some((candidate) => candidate.parent === categoryId);
+}
+
+function findRootCategoryIds(categories: WooCategory[], keywords: string[]): Set<number> {
+  const topLevelMatches = categories
+    .filter((category) => category.parent === 0 && categoryMatchesKeywords(category, keywords))
+    .map((category) => category.id);
+
+  if (topLevelMatches.length > 0) {
+    return new Set(topLevelMatches);
+  }
+
+  const nestedMatches = categories
+    .filter((category) => categoryMatchesKeywords(category, keywords) && hasChildren(categories, category.id))
+    .map((category) => category.id);
+
+  return new Set(nestedMatches);
+}
+
+function toUniqueLinks(entries: StorefrontNavLink[]): StorefrontNavLink[] {
+  const deduped = new Map<string, StorefrontNavLink>();
+  for (const entry of entries) {
+    if (!entry.label || !entry.href || deduped.has(entry.href)) {
+      continue;
+    }
+    deduped.set(entry.href, entry);
+  }
+  return Array.from(deduped.values());
+}
+
+function toCategoryChildrenLinks(
+  categories: WooCategory[],
+  rootIds: Set<number>,
+  key: "concern" | "brand",
+): StorefrontNavLink[] {
+  return categories
+    .filter((category) => rootIds.has(category.parent) && (category.count ?? 0) > 0)
+    .map((category) => ({
+      label: category.name,
+      href: buildFilterHref(key, category.slug),
+    }));
 }
 
 export async function getStorefrontNavigation(): Promise<StorefrontNavigation> {
@@ -297,34 +404,11 @@ export async function getStorefrontNavigation(): Promise<StorefrontNavigation> {
       return defaultNavigation();
     }
 
-    const concernRootSlugs = parseRootSlugs(process.env.WOO_CONCERN_ROOT_SLUGS, [
-      "concerns",
-      "concern",
-      "skin-concerns",
-      "skin-concern",
-    ]);
-    const brandRootSlugs = parseRootSlugs(process.env.WOO_BRAND_ROOT_SLUGS, ["brands", "brand"]);
+    const concernRootIds = findRootCategoryIds(categories, ["concern"]);
+    const brandRootIds = findRootCategoryIds(categories, ["brand"]);
 
-    const concernRootIds = new Set(
-      categories.filter((category) => concernRootSlugs.includes(category.slug.toLowerCase())).map((category) => category.id),
-    );
-    const brandRootIds = new Set(
-      categories.filter((category) => brandRootSlugs.includes(category.slug.toLowerCase())).map((category) => category.id),
-    );
-
-    let concerns = categories
-      .filter((category) => concernRootIds.has(category.parent) && (category.count ?? 0) > 0)
-      .map((category) => ({
-        label: category.name,
-        href: buildFilterHref("concern", category.slug),
-      }));
-
-    const brands = categories
-      .filter((category) => brandRootIds.has(category.parent) && (category.count ?? 0) > 0)
-      .map((category) => ({
-        label: category.name,
-        href: buildFilterHref("brand", category.slug),
-      }));
+    let concerns = toCategoryChildrenLinks(categories, concernRootIds, "concern");
+    let brands = toCategoryChildrenLinks(categories, brandRootIds, "brand");
 
     if (concerns.length === 0) {
       const excluded = new Set<number>([...concernRootIds, ...brandRootIds]);
@@ -337,8 +421,11 @@ export async function getStorefrontNavigation(): Promise<StorefrontNavigation> {
           continue;
         }
 
-        const hasChildren = categories.some((candidate) => candidate.parent === category.id);
-        if (hasChildren || (category.count ?? 0) <= 0) {
+        if (hasChildren(categories, category.id) || (category.count ?? 0) <= 0) {
+          continue;
+        }
+
+        if (categoryMatchesKeywords(category, ["brand"])) {
           continue;
         }
 
@@ -349,10 +436,27 @@ export async function getStorefrontNavigation(): Promise<StorefrontNavigation> {
       }
     }
 
+    concerns = toUniqueLinks(concerns);
+    if (brands.length === 0) {
+      brands = categories
+        .filter(
+          (category) =>
+            categoryMatchesKeywords(category, ["brand"]) &&
+            !hasChildren(categories, category.id) &&
+            (category.count ?? 0) > 0,
+        )
+        .map((category) => ({
+          label: category.name,
+          href: buildFilterHref("brand", category.slug),
+        }));
+    }
+
+    const uniqueBrands = toUniqueLinks(brands);
+
     return {
       top: DEFAULT_NAV_TOP,
       concerns: concerns.slice(0, 8),
-      brands: brands.length > 0 ? brands.slice(0, 12) : DEFAULT_NAV_BRANDS,
+      brands: uniqueBrands.length > 0 ? uniqueBrands.slice(0, 12) : DEFAULT_NAV_BRANDS,
     };
   } catch {
     return defaultNavigation();
@@ -437,6 +541,9 @@ function defaultDetailFromWoo(product: WooProduct): Product {
 function mapWooToDetailProduct(product: WooProduct): StorefrontDetailProduct {
   const fallback = getProductBySlug(product.slug);
   const fallbackOrDefault = fallback ?? defaultDetailFromWoo(product);
+  const inStock = isWooProductInStock(product);
+  const stockStatus = getWooStockStatus(product);
+  const stockMessage = getWooStockMessage(product);
 
   return {
     ...fallbackOrDefault,
@@ -456,6 +563,9 @@ function mapWooToDetailProduct(product: WooProduct): StorefrontDetailProduct {
       }) || fallbackOrDefault.regularPrice,
     priceSource: "retail",
     hasDiscount: Boolean(product.prices?.sale_price && product.prices?.regular_price),
+    inStock,
+    stockStatus,
+    stockMessage,
     images: {
       hero: product.images?.[0]?.src ?? fallbackOrDefault.images.hero,
       heroAlt: product.images?.[0]?.alt ?? fallbackOrDefault.images.heroAlt,

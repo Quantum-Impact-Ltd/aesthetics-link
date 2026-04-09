@@ -160,7 +160,10 @@ function ShopCard({
 }) {
   const [added, setAdded] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [feedback, setFeedback] = useState<string | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isOutOfStock = product.inStock === false || product.stockStatus === "outofstock";
+  const isUnavailable = product.id <= 0 || isOutOfStock;
   const canSeeWholesalePrice = isWholesaleViewer && product.priceSource === "wholesale";
   const visiblePrice = canSeeWholesalePrice ? product.price : product.retailPrice ?? product.price;
   const visibleRegularPrice =
@@ -168,18 +171,28 @@ function ShopCard({
       ? product.regularPrice
       : null;
 
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+      }
+    };
+  }, []);
+
   const handleAdd = async (event: React.MouseEvent) => {
     event.preventDefault();
-    if (loading || product.id <= 0) {
+    if (loading || isUnavailable) {
       return;
     }
 
+    setFeedback(null);
     setLoading(true);
     setAdded(true);
     try {
       await onAddToCart(product);
-    } catch {
+    } catch (error) {
       setAdded(false);
+      setFeedback(error instanceof Error ? error.message : "Unable to add this item to your bag.");
     } finally {
       if (timerRef.current) {
         clearTimeout(timerRef.current);
@@ -224,10 +237,13 @@ function ShopCard({
       </Link>
 
       <button
-        className={`shop-product-card__cta${added ? " added" : ""}`}
+        className={`shop-product-card__cta${added ? " added" : ""}${isUnavailable ? " is-disabled" : ""}`}
         onClick={handleAdd}
-        aria-label={`Add ${product.shortName} to bag`}
-        disabled={product.id <= 0}
+        aria-label={
+          isOutOfStock ? `${product.shortName} is out of stock` : `Add ${product.shortName} to bag`
+        }
+        disabled={isUnavailable}
+        aria-disabled={isUnavailable}
       >
         {added ? (
           <>
@@ -239,10 +255,28 @@ function ShopCard({
         ) : (
           <>
             <QuickCartIcon />
-            <span>{loading ? "Adding..." : product.id > 0 ? "Add to Bag" : "Unavailable"}</span>
+            <span>
+              {loading
+                ? "Adding..."
+                : isOutOfStock
+                  ? "Out of Stock"
+                  : product.id > 0
+                    ? "Add to Bag"
+                    : "Unavailable"}
+            </span>
           </>
         )}
       </button>
+      {isOutOfStock ? (
+        <p className="shop-product-card__stock-note" role="status" aria-live="polite">
+          {product.stockMessage || "This product is currently out of stock."}
+        </p>
+      ) : null}
+      {!isOutOfStock && feedback ? (
+        <p className="shop-product-card__feedback" role="status" aria-live="polite">
+          {feedback}
+        </p>
+      ) : null}
     </article>
   );
 }

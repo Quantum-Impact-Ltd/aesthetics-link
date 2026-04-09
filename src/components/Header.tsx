@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import AestheticsLinkWordmark from "@/components/AestheticsLinkWordmark";
-import type { StorefrontNavLink, StorefrontNavigation } from "@/lib/storefront/types";
+import { useStorefrontNavigation } from "@/components/StorefrontNavigationProvider";
+import type { StorefrontNavigation } from "@/lib/storefront/types";
 
 const DEFAULT_NAVIGATION: StorefrontNavigation = {
   top: [
@@ -29,35 +30,13 @@ const DEFAULT_NAVIGATION: StorefrontNavigation = {
   ],
 };
 
-function normalizeLinks(value: unknown): StorefrontNavLink[] {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-
-  return value
-    .map((entry) => {
-      if (!entry || typeof entry !== "object") {
-        return null;
-      }
-
-      const label = "label" in entry && typeof entry.label === "string" ? entry.label.trim() : "";
-      const href = "href" in entry && typeof entry.href === "string" ? entry.href.trim() : "";
-      if (!label || !href) {
-        return null;
-      }
-
-      return { label, href };
-    })
-    .filter((entry): entry is StorefrontNavLink => entry !== null);
-}
-
 export default function Header() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const [hidden, setHidden] = useState(false);
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
   const [mobileExpanded, setMobileExpanded] = useState<string | null>(null);
-  const [navigation, setNavigation] = useState<StorefrontNavigation>(DEFAULT_NAVIGATION);
+  const navigation = useStorefrontNavigation() ?? DEFAULT_NAVIGATION;
   const dropdownTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -79,39 +58,6 @@ export default function Header() {
     document.body.style.overflow = menuOpen ? "hidden" : "";
     return () => { document.body.style.overflow = ""; };
   }, [menuOpen]);
-
-  useEffect(() => {
-    const controller = new AbortController();
-
-    async function hydrateNavigation(): Promise<void> {
-      try {
-        const response = await fetch("/api/storefront/navigation", {
-          cache: "no-store",
-          signal: controller.signal,
-        });
-
-        if (!response.ok) {
-          return;
-        }
-
-        const payload = (await response.json()) as Partial<StorefrontNavigation>;
-        const top = normalizeLinks(payload.top);
-        const concerns = normalizeLinks(payload.concerns);
-        const brands = normalizeLinks(payload.brands);
-
-        setNavigation({
-          top: top.length > 0 ? top : DEFAULT_NAVIGATION.top,
-          concerns: concerns.length > 0 ? concerns : DEFAULT_NAVIGATION.concerns,
-          brands: brands.length > 0 ? brands : DEFAULT_NAVIGATION.brands,
-        });
-      } catch {
-        // Keep static fallback navigation when API fetch fails.
-      }
-    }
-
-    void hydrateNavigation();
-    return () => controller.abort();
-  }, []);
 
   const openDropdown = (name: string) => {
     if (dropdownTimeout.current) clearTimeout(dropdownTimeout.current);

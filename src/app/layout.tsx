@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import LenisProvider from "@/components/LenisProvider";
+import StorefrontNavigationProvider from "@/components/StorefrontNavigationProvider";
+import { getStorefrontNavigation } from "@/lib/storefront/server";
 import './globals.css';
 
 export const metadata: Metadata = {
@@ -8,16 +10,20 @@ export const metadata: Metadata = {
     "Precision-engineered aesthetic skincare formulas backed by science and designed without compromise.",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const navigation = await getStorefrontNavigation();
+
   return (
     <html lang="en">
       <body>
-        <LenisProvider />
-        {children}
+        <StorefrontNavigationProvider navigation={navigation}>
+          <LenisProvider />
+          {children}
+        </StorefrontNavigationProvider>
       </body>
     </html>
   );

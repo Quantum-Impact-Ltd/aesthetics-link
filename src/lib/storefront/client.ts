@@ -74,6 +74,19 @@ function formatMoney(rawValue: string | undefined, money: Partial<RawPrice & Raw
   return `${symbol}${amount.toFixed(minorUnits)}${suffix}`;
 }
 
+function normalizeStoreErrorMessage(value: string): string {
+  const normalized = decodeEntities(value).replace(/\s+/g, " ").trim();
+  if (!normalized) {
+    return "Store API request failed.";
+  }
+
+  if (/out of stock|insufficient stock|not enough stock|cannot add/i.test(normalized)) {
+    return "This product is out of stock and cannot be added to your bag.";
+  }
+
+  return normalized;
+}
+
 async function requestStoreApi<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`/api/woo${path}`, {
     cache: "no-store",
@@ -96,7 +109,7 @@ async function requestStoreApi<T>(path: string, init?: RequestInit): Promise<T> 
       payload &&
       "message" in payload &&
       typeof (payload as { message?: string }).message === "string"
-        ? (payload as { message: string }).message
+        ? normalizeStoreErrorMessage((payload as { message: string }).message)
         : `Store API request failed (${response.status})`;
     throw new Error(message);
   }

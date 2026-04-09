@@ -26,10 +26,12 @@ export default function ProductDetail({ product }: { product: StorefrontDetailPr
   const detailImgRef = useParallax<HTMLImageElement>(0.15);
   const textureRef = useParallax<HTMLImageElement>(0.18);
   const [adding, setAdding] = useState(false);
-  const [addStatus, setAddStatus] = useState<string | null>(null);
+  const [addStatus, setAddStatus] = useState<{ tone: "success" | "error"; message: string } | null>(null);
   const [displayPrice, setDisplayPrice] = useState(product.price);
   const [displayRegularPrice, setDisplayRegularPrice] = useState<string | null>(product.regularPrice ?? null);
   const [isWholesalePrice, setIsWholesalePrice] = useState(false);
+  const isOutOfStock = product.inStock === false || product.stockStatus === "outofstock";
+  const stockMessage = product.stockMessage || "This product is currently out of stock and unavailable.";
 
   useEffect(() => {
     let active = true;
@@ -90,7 +92,7 @@ export default function ProductDetail({ product }: { product: StorefrontDetailPr
   }, [product.price, product.wooId]);
 
   const handleAddToBag = async () => {
-    if (!product.wooId || adding) {
+    if (!product.wooId || adding || isOutOfStock) {
       return;
     }
 
@@ -99,9 +101,12 @@ export default function ProductDetail({ product }: { product: StorefrontDetailPr
 
     try {
       await addCartItem(product.wooId, 1);
-      setAddStatus("Added to bag");
+      setAddStatus({ tone: "success", message: "Added to bag" });
     } catch (error) {
-      setAddStatus(error instanceof Error ? error.message : "Unable to add this item to your bag.");
+      setAddStatus({
+        tone: "error",
+        message: error instanceof Error ? error.message : "Unable to add this item to your bag.",
+      });
     } finally {
       setAdding(false);
     }
@@ -144,11 +149,24 @@ export default function ProductDetail({ product }: { product: StorefrontDetailPr
               type="button"
               className="btn product-intro__cta"
               onClick={handleAddToBag}
-              disabled={!product.wooId || adding}
+              disabled={!product.wooId || adding || isOutOfStock}
             >
-              {adding ? "Adding..." : "Add to Bag"}
+              {isOutOfStock ? "Out of Stock" : adding ? "Adding..." : "Add to Bag"}
             </button>
-            {addStatus ? <p style={{ marginTop: "1rem", fontSize: "0.85rem" }}>{addStatus}</p> : null}
+            {isOutOfStock ? (
+              <p className="product-intro__stock-note" role="status" aria-live="polite">
+                {stockMessage}
+              </p>
+            ) : null}
+            {addStatus ? (
+              <p
+                className={`product-intro__status product-intro__status--${addStatus.tone}`}
+                role="status"
+                aria-live="polite"
+              >
+                {addStatus.message}
+              </p>
+            ) : null}
           </div>
 
           <div className="product-intro__image">

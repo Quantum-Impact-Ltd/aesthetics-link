@@ -35,28 +35,17 @@ function normalizeSort(value: string | undefined): "default" | "new" | "bestsell
   return "default";
 }
 
-function parseSlugList(value: string | undefined, fallback: string[]): string[] {
-  const raw = value?.trim();
-  if (!raw) {
-    return fallback;
-  }
+function isBestsellerSlug(slug: string): boolean {
+  return /(^|-)best-?seller(s)?(-|$)/.test(slug);
+}
 
-  const parsed = raw
-    .split(",")
-    .map((part) => normalizeSlug(part))
-    .filter((part): part is string => Boolean(part));
-  return parsed.length > 0 ? parsed : fallback;
+function isNewArrivalSlug(slug: string): boolean {
+  return /(^|-)new(-|$)|(^|-)new-arrival(s)?(-|$)|(^|-)latest(-|$)/.test(slug);
 }
 
 export default async function ProductsPage({ searchParams }: Props) {
   const params = await searchParams;
   const sort = normalizeSort(params.sort);
-  const bestsellerSlugs = parseSlugList(process.env.WOO_BESTSELLER_SLUGS, ["bestseller", "bestsellers"]);
-  const newArrivalSlugs = parseSlugList(process.env.WOO_NEW_ARRIVAL_SLUGS, [
-    "new",
-    "new-arrival",
-    "new-arrivals",
-  ]);
   const categoryFilter =
     normalizeSlug(params.category) ?? normalizeSlug(params.concern) ?? normalizeSlug(params.brand);
   let catalog = await getCatalogProducts();
@@ -67,12 +56,12 @@ export default async function ProductsPage({ searchParams }: Props) {
 
   if (sort === "new") {
     const tagged = catalog.filter((product) =>
-      product.categorySlugs.some((slug) => newArrivalSlugs.includes(slug)),
+      product.categorySlugs.some((slug) => isNewArrivalSlug(slug)),
     );
     catalog = tagged.length > 0 ? tagged : [...catalog].sort((a, b) => b.id - a.id);
   } else if (sort === "bestsellers") {
     const tagged = catalog.filter((product) =>
-      product.categorySlugs.some((slug) => bestsellerSlugs.includes(slug)),
+      product.categorySlugs.some((slug) => isBestsellerSlug(slug)),
     );
     catalog =
       tagged.length > 0
