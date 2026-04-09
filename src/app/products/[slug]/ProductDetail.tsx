@@ -30,8 +30,12 @@ export default function ProductDetail({ product }: { product: StorefrontDetailPr
   const [displayPrice, setDisplayPrice] = useState(product.price);
   const [displayRegularPrice, setDisplayRegularPrice] = useState<string | null>(product.regularPrice ?? null);
   const [isWholesalePrice, setIsWholesalePrice] = useState(false);
-  const [variationConfig, setVariationConfig] = useState<StorefrontVariableConfig | null>(null);
-  const [variationSelection, setVariationSelection] = useState<Record<string, string>>({});
+  const [variationConfig, setVariationConfig] = useState<StorefrontVariableConfig | null>(
+    product.variableConfig ?? null,
+  );
+  const [variationSelection, setVariationSelection] = useState<Record<string, string>>(
+    product.variableConfig?.defaults ?? {},
+  );
   const [variationLoading, setVariationLoading] = useState(false);
   const [variationError, setVariationError] = useState<string | null>(null);
   const isVariableProduct = product.hasOptions === true || product.productType === "variable";
@@ -107,6 +111,16 @@ export default function ProductDetail({ product }: { product: StorefrontDetailPr
         return;
       }
 
+      if (
+        product.variableConfig?.isVariable &&
+        product.variableConfig.attributes.length > 0
+      ) {
+        setVariationConfig(product.variableConfig);
+        setVariationSelection(product.variableConfig.defaults ?? {});
+        setVariationError(null);
+        return;
+      }
+
       setVariationLoading(true);
       setVariationError(null);
 
@@ -145,7 +159,7 @@ export default function ProductDetail({ product }: { product: StorefrontDetailPr
     return () => {
       active = false;
     };
-  }, [isVariableProduct, product.wooId]);
+  }, [isVariableProduct, product.wooId, product.variableConfig]);
 
   const variationAttributes = variationConfig?.attributes ?? [];
   const optionsReady = !isVariableProduct || variationAttributes.length > 0;

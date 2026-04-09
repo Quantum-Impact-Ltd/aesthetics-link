@@ -96,6 +96,7 @@ export type StorefrontDetailProduct = Product & {
   hasDiscount?: boolean;
   productType?: string;
   hasOptions?: boolean;
+  variableConfig?: StorefrontVariableConfig | null;
   inStock?: boolean;
   stockStatus?: string;
   stockMessage?: string | null;

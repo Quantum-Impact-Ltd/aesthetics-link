@@ -7,6 +7,8 @@ import type {
   StorefrontDetailProduct,
   StorefrontNavLink,
   StorefrontNavigation,
+  StorefrontVariableConfig,
+  StorefrontVariationAttribute,
 } from "@/lib/storefront/types";
 
 type WooImage = {
@@ -61,6 +63,8 @@ type WooProduct = {
   add_to_cart?: WooAddToCart;
 };
 
+type UnknownRecord = Record<string, unknown>;
+
 const ACCENT_COLORS = ["#F1CCCF", "#D8D0C4", "#D3E5EF", "#E8DFC8"];
 const DEFAULT_NAV_TOP = [
   { label: "All Products", href: "/products" },
@@ -98,6 +102,14 @@ function decodeEntities(value: string): string {
     .replace(/&euro;/g, "€");
 }
 
+function asRecord(value: unknown): UnknownRecord | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  return value as UnknownRecord;
+}
+
 function slugify(value: string): string {
   return decodeEntities(value)
     .toLowerCase()
@@ -114,6 +126,256 @@ function stripHtml(value: string): string {
 
 function normalizeWhitespace(value: string): string {
   return value.replace(/\s+/g, " ").trim();
+}
+
+function toVariationId(value: string): string {
+  return decodeEntities(value)
+    .trim()
+    .toLowerCase()
+    .replace(/^attribute_/, "")
+    .replace(/[^a-z0-9_]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+function uniqueVariationOptions(
+  options: Array<{ label: string; value: string }>,
+): Array<{ label: string; value: string }> {
+  const deduped = new Map<string, { label: string; value: string }>();
+  for (const option of options) {
+    if (!option.value || deduped.has(option.value)) {
+      continue;
+    }
+    deduped.set(option.value, option);
+  }
+  return Array.from(deduped.values());
+}
+
+function parseVariationAttributes(rawProduct: UnknownRecord): StorefrontVariationAttribute[] {
+  const attributesRaw = Array.isArray(rawProduct.attributes) ? rawProduct.attributes : [];
+
+  const fromProduct = attributesRaw
+    .map((entry) => {
+      const attribute = asRecord(entry);
+      if (!attribute) {
+        return null;
+      }
+
+      const label =
+        (typeof attribute.name === "string" && decodeEntities(attribute.name).trim()) ||
+        (typeof attribute.taxonomy === "string" && decodeEntities(attribute.taxonomy).trim()) ||
+        "Option";
+      const apiName =
+        (typeof attribute.taxonomy === "string" && attribute.taxonomy.trim()) ||
+        (typeof attribute.slug === "string" && attribute.slug.trim()) ||
+        (typeof attribute.name === "string" && attribute.name.trim()) ||
+        "";
+      const id = toVariationId(apiName || label);
+
+      if (!id || !apiName) {
+        return null;
+      }
+
+      let options: Array<{ label: string; value: string }> = [];
+
+      if (Array.isArray(attribute.terms)) {
+        options = attribute.terms
+          .map((termRaw) => {
+            const term = asRecord(termRaw);
+            if (!term) {
+              return null;
+            }
+
+            const optionLabel =
+              (typeof term.name === "string" && decodeEntities(term.name).trim()) || "";
+            const optionValue =
+              (typeof term.slug === "string" && term.slug.trim()) ||
+              (typeof term.name === "string" && term.name.trim()) ||
+              "";
+
+            if (!optionLabel || !optionValue) {
+              return null;
+            }
+
+            return {
+              label: optionLabel,
+              value: optionValue,
+            };
+          })
+          .filter((option): option is { label: string; value: string } => option !== null);
+      } else if (Array.isArray(attribute.options)) {
+        options = attribute.options
+          .map((optionRaw) => {
+            if (typeof optionRaw !== "string") {
+              return null;
+            }
+            const clean = decodeEntities(optionRaw).trim();
+            if (!clean) {
+              return null;
+            }
+            return {
+              label: clean,
+              value: optionRaw.trim(),
+            };
+          })
+          .filter((option): option is { label: string; value: string } => option !== null);
+      }
+
+      return {
+        id,
+        label,
+        apiName,
+        options: uniqueVariationOptions(options),
+      };
+    })
+    .filter((attribute): attribute is StorefrontVariationAttribute => attribute !== null);
+
+  if (fromProduct.length > 0) {
+    return fromProduct.filter((attribute) => attribute.options.length > 0);
+  }
+
+  const variationsRaw = Array.isArray(rawProduct.variations) ? rawProduct.variations : [];
+  const attributesById = new Map<string, StorefrontVariationAttribute>();
+
+  for (const variationRaw of variationsRaw) {
+    const variation = asRecord(variationRaw);
+    if (!variation) {
+      continue;
+    }
+
+    const attrsRaw = variation.attributes;
+    if (Array.isArray(attrsRaw)) {
+      for (const entryRaw of attrsRaw) {
+        const entry = asRecord(entryRaw);
+        if (!entry) {
+          continue;
+        }
+        const apiName =
+          (typeof entry.attribute === "string" && entry.attribute.trim()) ||
+          (typeof entry.name === "string" && entry.name.trim()) ||
+          "";
+        const optionValue = typeof entry.value === "string" ? entry.value.trim() : "";
+
+        if (!apiName || !optionValue) {
+          continue;
+        }
+
+        const id = toVariationId(apiName);
+        const current = attributesById.get(id) ?? {
+          id,
+          label: decodeEntities(apiName.replace(/^pa_/, "").replace(/_/g, " ")).trim(),
+          apiName,
+          options: [],
+        };
+        current.options = uniqueVariationOptions([
+          ...current.options,
+          { label: decodeEntities(optionValue), value: optionValue },
+        ]);
+        attributesById.set(id, current);
+      }
+      continue;
+    }
+
+    const attrsObject = asRecord(attrsRaw);
+    if (!attrsObject) {
+      continue;
+    }
+
+    for (const [rawKey, rawValue] of Object.entries(attrsObject)) {
+      if (typeof rawValue !== "string" || !rawValue.trim()) {
+        continue;
+      }
+
+      const apiName = rawKey.trim();
+      if (!apiName) {
+        continue;
+      }
+
+      const id = toVariationId(apiName);
+      const current = attributesById.get(id) ?? {
+        id,
+        label: decodeEntities(apiName.replace(/^pa_/, "").replace(/_/g, " ")).trim(),
+        apiName,
+        options: [],
+      };
+      current.options = uniqueVariationOptions([
+        ...current.options,
+        { label: decodeEntities(rawValue.trim()), value: rawValue.trim() },
+      ]);
+      attributesById.set(id, current);
+    }
+  }
+
+  return Array.from(attributesById.values()).filter((attribute) => attribute.options.length > 0);
+}
+
+function parseVariationDefaults(
+  rawProduct: UnknownRecord,
+  attributes: StorefrontVariationAttribute[],
+): Record<string, string> {
+  const defaults: Record<string, string> = {};
+  const rawDefaults = rawProduct.default_attributes;
+
+  if (Array.isArray(rawDefaults)) {
+    for (const entryRaw of rawDefaults) {
+      const entry = asRecord(entryRaw);
+      if (!entry) {
+        continue;
+      }
+
+      const keyRaw =
+        (typeof entry.attribute === "string" && entry.attribute.trim()) ||
+        (typeof entry.name === "string" && entry.name.trim()) ||
+        (typeof entry.taxonomy === "string" && entry.taxonomy.trim()) ||
+        "";
+      const valueRaw =
+        (typeof entry.value === "string" && entry.value.trim()) ||
+        (typeof entry.option === "string" && entry.option.trim()) ||
+        "";
+
+      if (!keyRaw || !valueRaw) {
+        continue;
+      }
+
+      defaults[toVariationId(keyRaw)] = valueRaw;
+    }
+  } else {
+    const defaultsObj = asRecord(rawDefaults);
+    if (defaultsObj) {
+      for (const [rawKey, rawValue] of Object.entries(defaultsObj)) {
+        if (typeof rawValue !== "string" || !rawValue.trim()) {
+          continue;
+        }
+        defaults[toVariationId(rawKey)] = rawValue.trim();
+      }
+    }
+  }
+
+  for (const attribute of attributes) {
+    if (!defaults[attribute.id] && attribute.options.length > 0) {
+      defaults[attribute.id] = attribute.options[0].value;
+    }
+  }
+
+  return defaults;
+}
+
+function extractVariableConfig(rawProduct: UnknownRecord): StorefrontVariableConfig | null {
+  const type = typeof rawProduct.type === "string" ? rawProduct.type.trim().toLowerCase() : "";
+  const hasOptions = Boolean(rawProduct.has_options);
+  const isVariable = type === "variable" || hasOptions;
+
+  if (!isVariable) {
+    return null;
+  }
+
+  const attributes = parseVariationAttributes(rawProduct);
+  const defaults = parseVariationDefaults(rawProduct, attributes);
+
+  return {
+    isVariable: true,
+    attributes,
+    defaults,
+  };
 }
 
 function isWooProductInStock(product: WooProduct): boolean {
@@ -313,6 +575,39 @@ async function fetchWooProducts(params: Record<string, string>): Promise<WooProd
   }
 
   return (await response.json()) as WooProduct[];
+}
+
+async function fetchWooProductById(
+  productId: number,
+  slugForTag?: string,
+): Promise<UnknownRecord | null> {
+  const baseUrl = getWooStoreBaseUrl();
+  if (!baseUrl || productId <= 0) {
+    return null;
+  }
+
+  const url = new URL(`/wp-json/wc/store/v1/products/${productId}`, baseUrl);
+  const tags = ["woo:products", `woo:product-id:${productId}`];
+  if (slugForTag) {
+    tags.push(`woo:product:${slugForTag}`);
+  }
+
+  const response = await fetch(url.toString(), {
+    headers: {
+      Accept: "application/json",
+    },
+    next: {
+      revalidate: 300,
+      tags,
+    },
+  });
+
+  if (!response.ok) {
+    return null;
+  }
+
+  const data = (await response.json()) as unknown;
+  return asRecord(data);
 }
 
 function defaultNavigation(): StorefrontNavigation {
@@ -552,7 +847,10 @@ function defaultDetailFromWoo(product: WooProduct): Product {
   };
 }
 
-function mapWooToDetailProduct(product: WooProduct): StorefrontDetailProduct {
+function mapWooToDetailProduct(
+  product: WooProduct,
+  variableConfig: StorefrontVariableConfig | null = null,
+): StorefrontDetailProduct {
   const fallback = getProductBySlug(product.slug);
   const fallbackOrDefault = fallback ?? defaultDetailFromWoo(product);
   const inStock = isWooProductInStock(product);
@@ -581,6 +879,7 @@ function mapWooToDetailProduct(product: WooProduct): StorefrontDetailProduct {
     hasDiscount: Boolean(product.prices?.sale_price && product.prices?.regular_price),
     productType,
     hasOptions,
+    variableConfig,
     inStock,
     stockStatus,
     stockMessage,
@@ -625,7 +924,19 @@ export async function getDetailProductBySlug(slug: string): Promise<StorefrontDe
       return getProductBySlug(slug) ?? null;
     }
 
-    return mapWooToDetailProduct(data[0]);
+    const product = data[0];
+    const isVariable =
+      product.type?.trim().toLowerCase() === "variable" || Boolean(product.has_options);
+    let variableConfig: StorefrontVariableConfig | null = null;
+
+    if (isVariable && product.id > 0) {
+      const productDetail = await fetchWooProductById(product.id, product.slug);
+      if (productDetail) {
+        variableConfig = extractVariableConfig(productDetail);
+      }
+    }
+
+    return mapWooToDetailProduct(product, variableConfig);
   } catch {
     return getProductBySlug(slug) ?? null;
   }

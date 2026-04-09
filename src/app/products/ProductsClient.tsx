@@ -278,11 +278,6 @@ function ShopCard({
           )}
         </button>
       )}
-      {requiresOptions && !isOutOfStock ? (
-        <p className="shop-product-card__feedback" role="status" aria-live="polite">
-          Choose variant on product page.
-        </p>
-      ) : null}
       {!isOutOfStock && feedback ? (
         <p className="shop-product-card__feedback" role="status" aria-live="polite">
           {feedback}
