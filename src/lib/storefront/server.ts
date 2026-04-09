@@ -831,13 +831,65 @@ function toUniqueLinks(entries: StorefrontNavLink[]): StorefrontNavLink[] {
   return Array.from(deduped.values());
 }
 
-function toCategoryChildrenLinks(
+function isDescendantOfRoot(
+  categoryId: number,
+  rootIds: Set<number>,
+  parentById: Map<number, number>,
+): boolean {
+  const seen = new Set<number>();
+  let current = parentById.get(categoryId) ?? 0;
+
+  while (current > 0 && !seen.has(current)) {
+    if (rootIds.has(current)) {
+      return true;
+    }
+
+    seen.add(current);
+    current = parentById.get(current) ?? 0;
+  }
+
+  return false;
+}
+
+function toCategoryDescendantLinks(
   categories: WooCategory[],
   rootIds: Set<number>,
   key: "concern" | "brand",
+  options?: {
+    leavesOnly?: boolean;
+  },
 ): StorefrontNavLink[] {
+  if (rootIds.size === 0) {
+    return [];
+  }
+
+  const parentById = new Map<number, number>();
+  for (const category of categories) {
+    parentById.set(category.id, category.parent);
+  }
+
+  const leavesOnly = options?.leavesOnly === true;
+
   return categories
-    .filter((category) => rootIds.has(category.parent) && isPositiveOrUnknownCount(category.count))
+    .filter((category) => {
+      if (rootIds.has(category.id)) {
+        return false;
+      }
+
+      if (!isDescendantOfRoot(category.id, rootIds, parentById)) {
+        return false;
+      }
+
+      if (!isPositiveOrUnknownCount(category.count)) {
+        return false;
+      }
+
+      if (leavesOnly && hasChildren(categories, category.id)) {
+        return false;
+      }
+
+      return true;
+    })
     .map((category) => ({
       label: category.name,
       href: buildFilterHref(key, category.slug),
@@ -854,7 +906,9 @@ export async function getStorefrontNavigation(): Promise<StorefrontNavigation> {
     const concernRootIds = findRootCategoryIds(categories, ["concern"]);
     const brandRootIds = findRootCategoryIds(categories, ["brand"]);
 
-    let concerns = toCategoryChildrenLinks(categories, concernRootIds, "concern");
+    let concerns = toCategoryDescendantLinks(categories, concernRootIds, "concern", {
+      leavesOnly: true,
+    });
     let brands =
       storeBrands?.flatMap((brand) => {
         const slug = typeof brand.slug === "string" ? brand.slug.trim() : "";
@@ -869,7 +923,9 @@ export async function getStorefrontNavigation(): Promise<StorefrontNavigation> {
       }) ?? [];
 
     if (brands.length === 0) {
-      brands = toCategoryChildrenLinks(categories, brandRootIds, "brand");
+      brands = toCategoryDescendantLinks(categories, brandRootIds, "brand", {
+        leavesOnly: true,
+      });
     }
 
     concerns = toUniqueLinks(concerns);
