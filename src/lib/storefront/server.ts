@@ -22,6 +22,13 @@ type WooProductCategory = {
   slug?: string;
 };
 
+type WooProductBrand = {
+  id?: number;
+  name?: string;
+  slug?: string;
+  count?: number;
+};
+
 type WooCategory = {
   id: number;
   name: string;
@@ -61,6 +68,8 @@ type WooProduct = {
   is_purchasable?: boolean;
   stock_status?: string;
   add_to_cart?: WooAddToCart;
+  brands?: WooProductBrand[];
+  brand?: WooProductBrand[] | WooProductBrand | string;
 };
 
 type UnknownRecord = Record<string, unknown>;
@@ -126,6 +135,81 @@ function stripHtml(value: string): string {
 
 function normalizeWhitespace(value: string): string {
   return value.replace(/\s+/g, " ").trim();
+}
+
+function isPositiveOrUnknownCount(count: number | undefined): boolean {
+  return typeof count !== "number" || count > 0;
+}
+
+function normalizeWooTerm(input: unknown): WooProductBrand | null {
+  const term = asRecord(input);
+  if (!term) {
+    return null;
+  }
+
+  const slug =
+    (typeof term.slug === "string" && slugify(term.slug)) ||
+    (typeof term.name === "string" && slugify(term.name)) ||
+    "";
+  const name =
+    (typeof term.name === "string" && normalizeWhitespace(decodeEntities(term.name))) ||
+    slug.replace(/-/g, " ").replace(/\b\w/g, (match) => match.toUpperCase());
+
+  if (!slug || !name) {
+    return null;
+  }
+
+  const count =
+    typeof term.count === "number"
+      ? term.count
+      : typeof term.count === "string" && Number.isFinite(Number(term.count))
+        ? Number(term.count)
+        : undefined;
+
+  return {
+    id: typeof term.id === "number" ? term.id : undefined,
+    slug,
+    name,
+    count,
+  };
+}
+
+function normalizeWooTerms(input: unknown): WooProductBrand[] {
+  if (!input) {
+    return [];
+  }
+
+  const rawItems = Array.isArray(input) ? input : [input];
+  const deduped = new Map<string, WooProductBrand>();
+
+  for (const item of rawItems) {
+    const term = normalizeWooTerm(item);
+    if (!term || !term.slug) {
+      continue;
+    }
+    deduped.set(term.slug, term);
+  }
+
+  return Array.from(deduped.values());
+}
+
+function getProductBrands(product: WooProduct): WooProductBrand[] {
+  const fromKnownFields = normalizeWooTerms(product.brands);
+
+  const rawProduct = asRecord(product);
+  const fromFallbackFields = normalizeWooTerms(
+    rawProduct?.brand ?? rawProduct?.product_brands ?? rawProduct?.product_brand,
+  );
+
+  const deduped = new Map<string, WooProductBrand>();
+  for (const term of [...fromKnownFields, ...fromFallbackFields]) {
+    if (!term.slug) {
+      continue;
+    }
+    deduped.set(term.slug, term);
+  }
+
+  return Array.from(deduped.values());
 }
 
 function toVariationId(value: string): string {
@@ -482,6 +566,9 @@ function toCatalogFallback(): StorefrontCatalogProduct[] {
     category: product.category,
     categorySlug: slugify(product.category),
     categorySlugs: [slugify(product.category)],
+    brand: null,
+    brandSlug: null,
+    brandSlugs: [],
     tagline: product.tagline,
     description: product.description,
     price: product.price,
@@ -499,12 +586,26 @@ function toCatalogFallback(): StorefrontCatalogProduct[] {
 
 function mapWooToCatalogProduct(product: WooProduct, index: number): StorefrontCatalogProduct {
   const fallback = getProductBySlug(product.slug);
+  const brands = getProductBrands(product);
   const firstCategoryName = product.categories?.[0]?.name ?? fallback?.category ?? "Skincare";
   const firstCategorySlug = product.categories?.[0]?.slug ?? slugify(firstCategoryName);
   const categorySlugs = (product.categories ?? [])
     .map((category) => category.slug ?? slugify(category.name ?? ""))
     .filter((value) => value.length > 0);
   const uniqueCategorySlugs = Array.from(new Set(categorySlugs.length > 0 ? categorySlugs : [firstCategorySlug]));
+  const brandSlugs = Array.from(
+    new Set(
+      brands
+        .map((brand) => brand.slug ?? "")
+        .map((slug) => slugify(slug))
+        .filter((slug) => slug.length > 0),
+    ),
+  );
+  const primaryBrand =
+    brands.find((brand) => {
+      const slug = slugify(brand.slug ?? "");
+      return slug.length > 0;
+    }) ?? null;
   const description =
     stripHtml(product.short_description ?? product.description ?? "") ||
     fallback?.description ||
@@ -523,6 +624,9 @@ function mapWooToCatalogProduct(product: WooProduct, index: number): StorefrontC
     category: firstCategoryName,
     categorySlug: firstCategorySlug,
     categorySlugs: uniqueCategorySlugs,
+    brand: primaryBrand?.name ?? null,
+    brandSlug: primaryBrand?.slug ? slugify(primaryBrand.slug) : null,
+    brandSlugs,
     tagline: fallback?.tagline ?? toSentence(description),
     description,
     price: toPriceLabel(product.prices) || fallback?.price || "",
@@ -642,6 +746,40 @@ async function fetchWooCategories(): Promise<WooCategory[] | null> {
   return (await response.json()) as WooCategory[];
 }
 
+async function fetchWooBrands(): Promise<WooProductBrand[] | null> {
+  const baseUrl = getWooStoreBaseUrl();
+  if (!baseUrl) {
+    return null;
+  }
+
+  const url = new URL("/wp-json/wc/store/v1/products/brands", baseUrl);
+  const response = await fetch(url.toString(), {
+    headers: {
+      Accept: "application/json",
+    },
+    next: {
+      revalidate: 300,
+      tags: ["woo:brands"],
+    },
+  });
+
+  // Some Woo stores do not expose brand terms via Store API.
+  if (response.status === 404) {
+    return null;
+  }
+
+  if (!response.ok) {
+    throw new Error(`Woo brand request failed (${response.status})`);
+  }
+
+  const payload = await response.json();
+  if (!Array.isArray(payload)) {
+    return null;
+  }
+
+  return normalizeWooTerms(payload);
+}
+
 function buildFilterHref(key: "concern" | "brand", slug: string): string {
   return `/products?${key}=${encodeURIComponent(slug)}`;
 }
@@ -699,7 +837,7 @@ function toCategoryChildrenLinks(
   key: "concern" | "brand",
 ): StorefrontNavLink[] {
   return categories
-    .filter((category) => rootIds.has(category.parent) && (category.count ?? 0) > 0)
+    .filter((category) => rootIds.has(category.parent) && isPositiveOrUnknownCount(category.count))
     .map((category) => ({
       label: category.name,
       href: buildFilterHref(key, category.slug),
@@ -708,7 +846,7 @@ function toCategoryChildrenLinks(
 
 export async function getStorefrontNavigation(): Promise<StorefrontNavigation> {
   try {
-    const categories = await fetchWooCategories();
+    const [categories, storeBrands] = await Promise.all([fetchWooCategories(), fetchWooBrands()]);
     if (!categories || categories.length === 0) {
       return defaultNavigation();
     }
@@ -717,7 +855,22 @@ export async function getStorefrontNavigation(): Promise<StorefrontNavigation> {
     const brandRootIds = findRootCategoryIds(categories, ["brand"]);
 
     let concerns = toCategoryChildrenLinks(categories, concernRootIds, "concern");
-    let brands = toCategoryChildrenLinks(categories, brandRootIds, "brand");
+    let brands =
+      storeBrands?.flatMap((brand) => {
+        const slug = typeof brand.slug === "string" ? brand.slug.trim() : "";
+        const name =
+          typeof brand.name === "string" ? normalizeWhitespace(decodeEntities(brand.name)) : "";
+
+        if (!slug || !name || !isPositiveOrUnknownCount(brand.count)) {
+          return [];
+        }
+
+        return [{ label: name, href: buildFilterHref("brand", slug) }];
+      }) ?? [];
+
+    if (brands.length === 0) {
+      brands = toCategoryChildrenLinks(categories, brandRootIds, "brand");
+    }
 
     if (concerns.length === 0) {
       const excluded = new Set<number>([...concernRootIds, ...brandRootIds]);
@@ -730,7 +883,7 @@ export async function getStorefrontNavigation(): Promise<StorefrontNavigation> {
           continue;
         }
 
-        if (hasChildren(categories, category.id) || (category.count ?? 0) <= 0) {
+        if (hasChildren(categories, category.id) || !isPositiveOrUnknownCount(category.count)) {
           continue;
         }
 
@@ -752,7 +905,7 @@ export async function getStorefrontNavigation(): Promise<StorefrontNavigation> {
           (category) =>
             categoryMatchesKeywords(category, ["brand"]) &&
             !hasChildren(categories, category.id) &&
-            (category.count ?? 0) > 0,
+            isPositiveOrUnknownCount(category.count),
         )
         .map((category) => ({
           label: category.name,
@@ -898,12 +1051,15 @@ function mapWooToDetailProduct(
   };
 }
 
-export async function getCatalogProducts(): Promise<StorefrontCatalogProduct[]> {
+export async function getCatalogProducts(options?: {
+  brand?: string;
+}): Promise<StorefrontCatalogProduct[]> {
   try {
     const data = await fetchWooProducts({
       per_page: "100",
       orderby: "menu_order",
       order: "asc",
+      ...(options?.brand ? { brand: options.brand } : {}),
     });
 
     if (!data) {

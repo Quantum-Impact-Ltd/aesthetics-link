@@ -12,7 +12,7 @@ type Props = {
 
 export const revalidate = 300;
 
-function normalizeSlug(value: string | undefined): string | null {
+function normalizeSlug(value: string | null | undefined): string | null {
   if (!value) {
     return null;
   }
@@ -46,9 +46,38 @@ function isNewArrivalSlug(slug: string): boolean {
 export default async function ProductsPage({ searchParams }: Props) {
   const params = await searchParams;
   const sort = normalizeSort(params.sort);
-  const categoryFilter =
-    normalizeSlug(params.category) ?? normalizeSlug(params.concern) ?? normalizeSlug(params.brand);
-  let catalog = await getCatalogProducts();
+  const categoryFilter = normalizeSlug(params.category) ?? normalizeSlug(params.concern);
+  const brandFilter = normalizeSlug(params.brand);
+  let catalog = await getCatalogProducts(brandFilter ? { brand: brandFilter } : undefined);
+
+  // Some Woo setups ignore `brand` on Store API products; retry with full catalog.
+  if (brandFilter && catalog.length === 0) {
+    catalog = await getCatalogProducts();
+  }
+
+  if (brandFilter) {
+    const filteredByBrand = catalog.filter((product) => {
+      const allBrandSlugs = [
+        product.brandSlug,
+        ...(product.brandSlugs ?? []),
+      ]
+        .map((slug) => normalizeSlug(slug))
+        .filter((slug): slug is string => Boolean(slug));
+
+      return allBrandSlugs.includes(brandFilter);
+    });
+
+    const hasBrandMetadata = catalog.some((product) => {
+      const allBrandSlugs = [product.brandSlug, ...(product.brandSlugs ?? [])]
+        .map((slug) => normalizeSlug(slug))
+        .filter((slug): slug is string => Boolean(slug));
+      return allBrandSlugs.length > 0;
+    });
+
+    if (filteredByBrand.length > 0 || hasBrandMetadata) {
+      catalog = filteredByBrand;
+    }
+  }
 
   if (sort === "new") {
     const tagged = catalog.filter((product) =>

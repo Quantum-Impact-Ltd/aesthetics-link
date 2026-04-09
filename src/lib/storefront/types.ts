@@ -8,6 +8,9 @@ export type StorefrontCatalogProduct = {
   category: string;
   categorySlug: string;
   categorySlugs: string[];
+  brand?: string | null;
+  brandSlug?: string | null;
+  brandSlugs?: string[];
   tagline: string;
   description: string;
   price: string;

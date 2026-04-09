@@ -43,6 +43,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   revalidateTag("woo:products", { expire: 0 });
   revalidateTag("woo:categories", { expire: 0 });
+  revalidateTag("woo:brands", { expire: 0 });
   revalidatePath("/products");
   revalidatePath("/products/[slug]", "page");
 
