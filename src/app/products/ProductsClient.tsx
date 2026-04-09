@@ -3,6 +3,7 @@
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import MotionProvider from "@/components/MotionProvider";
+import { useStorefrontNavigation } from "@/components/StorefrontNavigationProvider";
 import { getMe, getWholesalePrices } from "@/lib/auth/client";
 import {
   addCartItem,
@@ -290,6 +291,7 @@ export default function ProductsClient({
   initialProducts: StorefrontCatalogProduct[];
   initialCategory: string;
 }) {
+  const navigation = useStorefrontNavigation();
   const [products, setProducts] = useState<StorefrontCatalogProduct[]>(initialProducts);
   const [activeFilter, setActiveFilter] = useState(initialCategory);
   const [cartOpen, setCartOpen] = useState(false);
@@ -306,7 +308,7 @@ export default function ProductsClient({
   });
   const [cartBusy, setCartBusy] = useState(false);
 
-  const normalizeFilterSlug = (value: string | undefined): string => {
+  const normalizeFilterSlug = (value: string | null | undefined): string => {
     if (!value) {
       return "";
     }
@@ -318,13 +320,32 @@ export default function ProductsClient({
       .replace(/^-+|-+$/g, "");
   };
 
-  const labelFromSlug = (slug: string): string => {
-    return slug
-      .split("-")
-      .filter(Boolean)
-      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-      .join(" ");
-  };
+  const concernFilters = useMemo(() => {
+    const links = navigation?.concerns ?? [];
+    const deduped = new Map<string, string>();
+
+    for (const link of links) {
+      if (!link?.href || !link?.label) {
+        continue;
+      }
+
+      let slug = "";
+      try {
+        const url = new URL(link.href, "https://storefront.local");
+        slug = normalizeFilterSlug(url.searchParams.get("concern"));
+      } catch {
+        slug = "";
+      }
+
+      if (!slug || deduped.has(slug)) {
+        continue;
+      }
+
+      deduped.set(slug, link.label);
+    }
+
+    return Array.from(deduped.entries()).map(([slug, label]) => ({ slug, label }));
+  }, [navigation]);
 
   const productCategoryIndex = useMemo(() => {
     return products.map((product) => {
@@ -360,25 +381,12 @@ export default function ProductsClient({
   }, [productCategoryIndex]);
 
   const categories = useMemo(() => {
-    const deduped = new Map<string, string>();
-
-    for (const entry of productCategoryIndex) {
-      if (entry.primarySlug && !deduped.has(entry.primarySlug)) {
-        deduped.set(entry.primarySlug, entry.product.category);
-      }
-
-      for (const slug of entry.allSlugs) {
-        if (!deduped.has(slug)) {
-          deduped.set(slug, labelFromSlug(slug));
-        }
-      }
+    if (concernFilters.length === 0) {
+      return [{ slug: "all", label: "All" }];
     }
 
-    return [
-      { slug: "all", label: "All" },
-      ...Array.from(deduped.entries()).map(([slug, label]) => ({ slug, label })),
-    ];
-  }, [productCategoryIndex]);
+    return [{ slug: "all", label: "All" }, ...concernFilters];
+  }, [concernFilters]);
 
   useEffect(() => {
     void refreshCart();
