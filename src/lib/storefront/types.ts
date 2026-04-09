@@ -15,6 +15,8 @@ export type StorefrontCatalogProduct = {
   regularPrice?: string | null;
   priceSource?: "retail" | "wholesale";
   hasDiscount?: boolean;
+  productType?: string;
+  hasOptions?: boolean;
   inStock?: boolean;
   stockStatus?: string;
   stockMessage?: string | null;
@@ -92,7 +94,27 @@ export type StorefrontDetailProduct = Product & {
   regularPrice?: string | null;
   priceSource?: "retail" | "wholesale";
   hasDiscount?: boolean;
+  productType?: string;
+  hasOptions?: boolean;
   inStock?: boolean;
   stockStatus?: string;
   stockMessage?: string | null;
+};
+
+export type StorefrontVariationAttributeOption = {
+  label: string;
+  value: string;
+};
+
+export type StorefrontVariationAttribute = {
+  id: string;
+  label: string;
+  apiName: string;
+  options: StorefrontVariationAttributeOption[];
+};
+
+export type StorefrontVariableConfig = {
+  isVariable: boolean;
+  attributes: StorefrontVariationAttribute[];
+  defaults: Record<string, string>;
 };

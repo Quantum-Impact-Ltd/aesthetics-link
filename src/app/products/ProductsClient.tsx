@@ -162,6 +162,7 @@ function ShopCard({
   const [loading, setLoading] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const requiresOptions = product.hasOptions === true || product.productType === "variable";
   const isOutOfStock = product.inStock === false || product.stockStatus === "outofstock";
   const isUnavailable = product.id <= 0 || isOutOfStock;
   const canSeeWholesalePrice = isWholesaleViewer && product.priceSource === "wholesale";
@@ -236,37 +237,52 @@ function ShopCard({
         </div>
       </Link>
 
-      <button
-        className={`shop-product-card__cta${added ? " added" : ""}${isUnavailable ? " is-disabled" : ""}`}
-        onClick={handleAdd}
-        aria-label={
-          isOutOfStock ? `${product.shortName} is out of stock` : `Add ${product.shortName} to bag`
-        }
-        disabled={isUnavailable}
-        aria-disabled={isUnavailable}
-      >
-        {added ? (
-          <>
-            <svg width="14" height="11" viewBox="0 0 14 11" fill="none">
-              <path d="M1 5.5L5.5 10L13 1" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-            <span>Added</span>
-          </>
-        ) : (
-          <>
-            <QuickCartIcon />
-            <span>
-              {loading
-                ? "Adding..."
-                : isOutOfStock
-                  ? "Out of Stock"
-                  : product.id > 0
-                    ? "Add to Bag"
-                    : "Unavailable"}
-            </span>
-          </>
-        )}
-      </button>
+      {requiresOptions && !isOutOfStock ? (
+        <Link
+          href={`/products/${product.slug}`}
+          className="shop-product-card__cta shop-product-card__cta--link"
+          aria-label={`Choose options for ${product.shortName}`}
+        >
+          <span>Select Options</span>
+        </Link>
+      ) : (
+        <button
+          className={`shop-product-card__cta${added ? " added" : ""}${isUnavailable ? " is-disabled" : ""}`}
+          onClick={handleAdd}
+          aria-label={
+            isOutOfStock ? `${product.shortName} is out of stock` : `Add ${product.shortName} to bag`
+          }
+          disabled={isUnavailable}
+          aria-disabled={isUnavailable}
+        >
+          {added ? (
+            <>
+              <svg width="14" height="11" viewBox="0 0 14 11" fill="none">
+                <path d="M1 5.5L5.5 10L13 1" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+              <span>Added</span>
+            </>
+          ) : (
+            <>
+              <QuickCartIcon />
+              <span>
+                {loading
+                  ? "Adding..."
+                  : isOutOfStock
+                    ? "Out of Stock"
+                    : product.id > 0
+                      ? "Add to Bag"
+                      : "Unavailable"}
+              </span>
+            </>
+          )}
+        </button>
+      )}
+      {requiresOptions && !isOutOfStock ? (
+        <p className="shop-product-card__feedback" role="status" aria-live="polite">
+          Choose variant on product page.
+        </p>
+      ) : null}
       {isOutOfStock ? (
         <p className="shop-product-card__stock-note" role="status" aria-live="polite">
           {product.stockMessage || "This product is currently out of stock."}

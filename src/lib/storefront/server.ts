@@ -48,6 +48,8 @@ type WooProduct = {
   id: number;
   slug: string;
   name: string;
+  type?: string;
+  has_options?: boolean;
   short_description?: string;
   description?: string;
   images?: WooImage[];
@@ -222,6 +224,8 @@ function toCatalogFallback(): StorefrontCatalogProduct[] {
     description: product.description,
     price: product.price,
     retailPrice: product.price,
+    productType: "simple",
+    hasOptions: false,
     inStock: true,
     stockStatus: "instock",
     stockMessage: null,
@@ -246,6 +250,8 @@ function mapWooToCatalogProduct(product: WooProduct, index: number): StorefrontC
   const inStock = isWooProductInStock(product);
   const stockStatus = getWooStockStatus(product);
   const stockMessage = getWooStockMessage(product);
+  const productType = product.type?.trim().toLowerCase();
+  const hasOptions = Boolean(product.has_options) || productType === "variable";
 
   return {
     id: product.id,
@@ -265,6 +271,8 @@ function mapWooToCatalogProduct(product: WooProduct, index: number): StorefrontC
     }),
     priceSource: "retail",
     hasDiscount: Boolean(product.prices?.sale_price && product.prices?.regular_price),
+    productType,
+    hasOptions,
     inStock,
     stockStatus,
     stockMessage,
@@ -550,6 +558,8 @@ function mapWooToDetailProduct(product: WooProduct): StorefrontDetailProduct {
   const inStock = isWooProductInStock(product);
   const stockStatus = getWooStockStatus(product);
   const stockMessage = getWooStockMessage(product);
+  const productType = product.type?.trim().toLowerCase();
+  const hasOptions = Boolean(product.has_options) || productType === "variable";
 
   return {
     ...fallbackOrDefault,
@@ -569,6 +579,8 @@ function mapWooToDetailProduct(product: WooProduct): StorefrontDetailProduct {
       }) || fallbackOrDefault.regularPrice,
     priceSource: "retail",
     hasDiscount: Boolean(product.prices?.sale_price && product.prices?.regular_price),
+    productType,
+    hasOptions,
     inStock,
     stockStatus,
     stockMessage,

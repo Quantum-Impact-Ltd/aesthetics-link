@@ -6,8 +6,8 @@ import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import MotionProvider from "@/components/MotionProvider";
 import { getMe, getWholesalePrices } from "@/lib/auth/client";
-import { addCartItem } from "@/lib/storefront/client";
-import type { StorefrontDetailProduct } from "@/lib/storefront/types";
+import { addCartItem, addVariableCartItem, fetchVariableConfig } from "@/lib/storefront/client";
+import type { StorefrontDetailProduct, StorefrontVariableConfig } from "@/lib/storefront/types";
 import { useEffect, useState } from "react";
 
 function ArrowLongIcon() {
@@ -30,6 +30,11 @@ export default function ProductDetail({ product }: { product: StorefrontDetailPr
   const [displayPrice, setDisplayPrice] = useState(product.price);
   const [displayRegularPrice, setDisplayRegularPrice] = useState<string | null>(product.regularPrice ?? null);
   const [isWholesalePrice, setIsWholesalePrice] = useState(false);
+  const [variationConfig, setVariationConfig] = useState<StorefrontVariableConfig | null>(null);
+  const [variationSelection, setVariationSelection] = useState<Record<string, string>>({});
+  const [variationLoading, setVariationLoading] = useState(false);
+  const [variationError, setVariationError] = useState<string | null>(null);
+  const isVariableProduct = product.hasOptions === true || product.productType === "variable";
   const isOutOfStock = product.inStock === false || product.stockStatus === "outofstock";
   const stockMessage = product.stockMessage || "This product is currently out of stock and unavailable.";
 
@@ -91,16 +96,101 @@ export default function ProductDetail({ product }: { product: StorefrontDetailPr
     };
   }, [product.price, product.wooId]);
 
+  useEffect(() => {
+    let active = true;
+
+    async function loadVariationConfig(): Promise<void> {
+      if (!isVariableProduct || !product.wooId || product.wooId <= 0) {
+        setVariationConfig(null);
+        setVariationSelection({});
+        setVariationError(null);
+        return;
+      }
+
+      setVariationLoading(true);
+      setVariationError(null);
+
+      try {
+        const config = await fetchVariableConfig(product.wooId);
+        if (!active) {
+          return;
+        }
+
+        if (!config.isVariable || config.attributes.length === 0) {
+          setVariationConfig(config);
+          setVariationSelection({});
+          setVariationError("Product options are unavailable right now. Please try again in a moment.");
+          return;
+        }
+
+        setVariationConfig(config);
+        setVariationSelection(config.defaults);
+      } catch {
+        if (!active) {
+          return;
+        }
+
+        setVariationConfig(null);
+        setVariationSelection({});
+        setVariationError("Unable to load product options. Please refresh and try again.");
+      } finally {
+        if (active) {
+          setVariationLoading(false);
+        }
+      }
+    }
+
+    void loadVariationConfig();
+
+    return () => {
+      active = false;
+    };
+  }, [isVariableProduct, product.wooId]);
+
+  const variationAttributes = variationConfig?.attributes ?? [];
+  const optionsReady = !isVariableProduct || variationAttributes.length > 0;
+  const missingSelections = variationAttributes.filter((attribute) => !variationSelection[attribute.id]);
+  const canAddWithSelection = !isVariableProduct || (optionsReady && missingSelections.length === 0);
+
   const handleAddToBag = async () => {
-    if (!product.wooId || adding || isOutOfStock) {
+    if (!product.wooId || adding || isOutOfStock || variationLoading) {
       return;
+    }
+
+    if (isVariableProduct) {
+      if (!optionsReady) {
+        setAddStatus({
+          tone: "error",
+          message: variationError || "Product options are not ready yet. Please try again.",
+        });
+        return;
+      }
+
+      if (missingSelections.length > 0) {
+        setAddStatus({
+          tone: "error",
+          message: "Please select all required options before adding to bag.",
+        });
+        return;
+      }
     }
 
     setAdding(true);
     setAddStatus(null);
 
     try {
-      await addCartItem(product.wooId, 1);
+      if (isVariableProduct) {
+        await addVariableCartItem(
+          product.wooId,
+          variationAttributes.map((attribute) => ({
+            attribute: attribute.apiName,
+            value: variationSelection[attribute.id],
+          })),
+          1,
+        );
+      } else {
+        await addCartItem(product.wooId, 1);
+      }
       setAddStatus({ tone: "success", message: "Added to bag" });
     } catch (error) {
       setAddStatus({
@@ -145,14 +235,59 @@ export default function ProductDetail({ product }: { product: StorefrontDetailPr
                 </span>
               ) : null}
             </p>
+            {isVariableProduct ? (
+              <div className="product-intro__variation-picker">
+                {variationAttributes.map((attribute) => (
+                  <label key={attribute.id} className="product-intro__variation-field">
+                    <span>{attribute.label}</span>
+                    <select
+                      value={variationSelection[attribute.id] ?? ""}
+                      onChange={(event) =>
+                        setVariationSelection((previous) => ({
+                          ...previous,
+                          [attribute.id]: event.target.value,
+                        }))
+                      }
+                      disabled={variationLoading || isOutOfStock}
+                    >
+                      <option value="">Select {attribute.label}</option>
+                      {attribute.options.map((option) => (
+                        <option key={`${attribute.id}:${option.value}`} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ))}
+              </div>
+            ) : null}
             <button
               type="button"
               className="btn product-intro__cta"
               onClick={handleAddToBag}
-              disabled={!product.wooId || adding || isOutOfStock}
+              disabled={
+                !product.wooId ||
+                adding ||
+                isOutOfStock ||
+                variationLoading ||
+                !canAddWithSelection
+              }
             >
-              {isOutOfStock ? "Out of Stock" : adding ? "Adding..." : "Add to Bag"}
+              {isOutOfStock
+                ? "Out of Stock"
+                : variationLoading
+                  ? "Loading options..."
+                  : !canAddWithSelection
+                    ? "Select Options"
+                    : adding
+                      ? "Adding..."
+                      : "Add to Bag"}
             </button>
+            {variationError ? (
+              <p className="product-intro__status product-intro__status--error" role="status" aria-live="polite">
+                {variationError}
+              </p>
+            ) : null}
             {isOutOfStock ? (
               <p className="product-intro__stock-note" role="status" aria-live="polite">
                 {stockMessage}

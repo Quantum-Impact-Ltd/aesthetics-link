@@ -4099,6 +4099,38 @@ h5,
   color: #1f6a3b;
 }
 
+.product-intro__variation-picker {
+  width: 100%;
+  max-width: 30rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.product-intro__variation-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.product-intro__variation-field span {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-gray2);
+}
+
+.product-intro__variation-field select {
+  width: 100%;
+  border: 1px solid var(--color-border);
+  background: #fff;
+  min-height: 2.6rem;
+  padding: 0.5rem 0.7rem;
+  font-size: 0.9rem;
+  color: var(--color-text);
+}
+
 .product-intro__image {
   position: relative;
   width: 50%;
@@ -5247,6 +5279,10 @@ h5,
   color: #fff;
   border-color: var(--color-text);
   transform: scale(0.97);
+}
+
+.shop-product-card__cta--link {
+  text-decoration: none;
 }
 
 .shop-product-card__cta.is-disabled,

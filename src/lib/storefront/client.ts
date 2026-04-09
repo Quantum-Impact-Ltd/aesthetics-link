@@ -4,6 +4,8 @@ import type {
   StorefrontCart,
   StorefrontCheckoutPayload,
   StorefrontCheckoutResponse,
+  StorefrontVariableConfig,
+  StorefrontVariationAttribute,
 } from "@/lib/storefront/types";
 
 type RawPrice = {
@@ -84,7 +86,296 @@ function normalizeStoreErrorMessage(value: string): string {
     return "This product is out of stock and cannot be added to your bag.";
   }
 
+  if (/missing attributes|choose product options|select options|please choose/i.test(normalized)) {
+    return "Please select all required product options before adding to bag.";
+  }
+
   return normalized;
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  return value as Record<string, unknown>;
+}
+
+function toId(value: string): string {
+  return decodeEntities(value)
+    .trim()
+    .toLowerCase()
+    .replace(/^attribute_/, "")
+    .replace(/[^a-z0-9_]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+function uniqueOptions(options: Array<{ label: string; value: string }>): Array<{ label: string; value: string }> {
+  const deduped = new Map<string, { label: string; value: string }>();
+  for (const option of options) {
+    if (!option.value || deduped.has(option.value)) {
+      continue;
+    }
+    deduped.set(option.value, option);
+  }
+  return Array.from(deduped.values());
+}
+
+function parseVariationAttributes(rawProduct: Record<string, unknown>): StorefrontVariationAttribute[] {
+  const attributesRaw = Array.isArray(rawProduct.attributes) ? rawProduct.attributes : [];
+
+  const fromProduct = attributesRaw
+    .map((entry) => {
+      const attribute = asRecord(entry);
+      if (!attribute) {
+        return null;
+      }
+
+      const label =
+        (typeof attribute.name === "string" && decodeEntities(attribute.name).trim()) ||
+        (typeof attribute.taxonomy === "string" && decodeEntities(attribute.taxonomy).trim()) ||
+        "Option";
+      const apiName =
+        (typeof attribute.taxonomy === "string" && attribute.taxonomy.trim()) ||
+        (typeof attribute.slug === "string" && attribute.slug.trim()) ||
+        (typeof attribute.name === "string" && attribute.name.trim()) ||
+        "";
+      const id = toId(apiName || label);
+
+      if (!id || !apiName) {
+        return null;
+      }
+
+      let options: Array<{ label: string; value: string }> = [];
+      if (Array.isArray(attribute.terms)) {
+        options = attribute.terms
+          .map((termRaw) => {
+            const term = asRecord(termRaw);
+            if (!term) {
+              return null;
+            }
+
+            const optionLabel =
+              (typeof term.name === "string" && decodeEntities(term.name).trim()) || "";
+            const optionValue =
+              (typeof term.slug === "string" && term.slug.trim()) ||
+              (typeof term.name === "string" && term.name.trim()) ||
+              "";
+
+            if (!optionLabel || !optionValue) {
+              return null;
+            }
+
+            return {
+              label: optionLabel,
+              value: optionValue,
+            };
+          })
+          .filter((option): option is { label: string; value: string } => option !== null);
+      } else if (Array.isArray(attribute.options)) {
+        options = attribute.options
+          .map((optionRaw) => {
+            if (typeof optionRaw !== "string") {
+              return null;
+            }
+            const labelValue = decodeEntities(optionRaw).trim();
+            if (!labelValue) {
+              return null;
+            }
+            return { label: labelValue, value: optionRaw.trim() };
+          })
+          .filter((option): option is { label: string; value: string } => option !== null);
+      }
+
+      return {
+        id,
+        label,
+        apiName,
+        options: uniqueOptions(options),
+      };
+    })
+    .filter((attribute): attribute is StorefrontVariationAttribute => attribute !== null);
+
+  const variationsRaw = Array.isArray(rawProduct.variations) ? rawProduct.variations : [];
+
+  if (fromProduct.length === 0) {
+    const attributesById = new Map<string, StorefrontVariationAttribute>();
+
+    for (const variationRaw of variationsRaw) {
+      const variation = asRecord(variationRaw);
+      if (!variation) {
+        continue;
+      }
+
+      const attrsRaw = variation.attributes;
+      if (Array.isArray(attrsRaw)) {
+        for (const entryRaw of attrsRaw) {
+          const entry = asRecord(entryRaw);
+          if (!entry) {
+            continue;
+          }
+          const apiName =
+            (typeof entry.attribute === "string" && entry.attribute.trim()) ||
+            (typeof entry.name === "string" && entry.name.trim()) ||
+            "";
+          const optionValue = typeof entry.value === "string" ? entry.value.trim() : "";
+          if (!apiName || !optionValue) {
+            continue;
+          }
+
+          const id = toId(apiName);
+          const current = attributesById.get(id) ?? {
+            id,
+            label: decodeEntities(apiName.replace(/^pa_/, "").replace(/_/g, " ")).trim(),
+            apiName,
+            options: [],
+          };
+
+          current.options = uniqueOptions([
+            ...current.options,
+            { label: decodeEntities(optionValue), value: optionValue },
+          ]);
+          attributesById.set(id, current);
+        }
+      } else {
+        const attrsObject = asRecord(attrsRaw);
+        if (!attrsObject) {
+          continue;
+        }
+        for (const [rawKey, rawValue] of Object.entries(attrsObject)) {
+          if (typeof rawValue !== "string" || !rawValue.trim()) {
+            continue;
+          }
+          const apiName = rawKey.trim();
+          if (!apiName) {
+            continue;
+          }
+          const id = toId(apiName);
+          const current = attributesById.get(id) ?? {
+            id,
+            label: decodeEntities(apiName.replace(/^pa_/, "").replace(/_/g, " ")).trim(),
+            apiName,
+            options: [],
+          };
+          current.options = uniqueOptions([
+            ...current.options,
+            { label: decodeEntities(rawValue.trim()), value: rawValue.trim() },
+          ]);
+          attributesById.set(id, current);
+        }
+      }
+    }
+
+    return Array.from(attributesById.values()).filter((attribute) => attribute.options.length > 0);
+  }
+
+  if (variationsRaw.length === 0) {
+    return fromProduct.filter((attribute) => attribute.options.length > 0);
+  }
+
+  const optionsByAttribute = new Map<string, Array<{ label: string; value: string }>>();
+  for (const attribute of fromProduct) {
+    optionsByAttribute.set(attribute.id, [...attribute.options]);
+  }
+
+  for (const variationRaw of variationsRaw) {
+    const variation = asRecord(variationRaw);
+    if (!variation) {
+      continue;
+    }
+
+    const attrsRaw = variation.attributes;
+    if (!Array.isArray(attrsRaw)) {
+      continue;
+    }
+
+    for (const entryRaw of attrsRaw) {
+      const entry = asRecord(entryRaw);
+      if (!entry) {
+        continue;
+      }
+      const attrName =
+        (typeof entry.attribute === "string" && entry.attribute.trim()) ||
+        (typeof entry.name === "string" && entry.name.trim()) ||
+        "";
+      const attrValue = typeof entry.value === "string" ? entry.value.trim() : "";
+      if (!attrName || !attrValue) {
+        continue;
+      }
+
+      const key = toId(attrName);
+      const existing = optionsByAttribute.get(key) ?? [];
+      optionsByAttribute.set(
+        key,
+        uniqueOptions([...existing, { label: decodeEntities(attrValue), value: attrValue }]),
+      );
+    }
+  }
+
+  return fromProduct
+    .map((attribute) => ({
+      ...attribute,
+      options: uniqueOptions(optionsByAttribute.get(attribute.id) ?? attribute.options),
+    }))
+    .filter((attribute) => attribute.options.length > 0);
+}
+
+function parseVariationDefaults(
+  rawProduct: Record<string, unknown>,
+  attributes: StorefrontVariationAttribute[],
+): Record<string, string> {
+  const defaults: Record<string, string> = {};
+  const rawDefaults = rawProduct.default_attributes;
+
+  if (!rawDefaults) {
+    return defaults;
+  }
+
+  if (Array.isArray(rawDefaults)) {
+    for (const entryRaw of rawDefaults) {
+      const entry = asRecord(entryRaw);
+      if (!entry) {
+        continue;
+      }
+
+      const keyRaw =
+        (typeof entry.attribute === "string" && entry.attribute.trim()) ||
+        (typeof entry.name === "string" && entry.name.trim()) ||
+        (typeof entry.taxonomy === "string" && entry.taxonomy.trim()) ||
+        "";
+      const valueRaw =
+        (typeof entry.value === "string" && entry.value.trim()) ||
+        (typeof entry.option === "string" && entry.option.trim()) ||
+        "";
+
+      if (!keyRaw || !valueRaw) {
+        continue;
+      }
+
+      defaults[toId(keyRaw)] = valueRaw;
+    }
+  } else {
+    const defaultsObj = asRecord(rawDefaults);
+    if (defaultsObj) {
+      for (const [keyRaw, valueRaw] of Object.entries(defaultsObj)) {
+        if (typeof valueRaw !== "string" || !valueRaw.trim()) {
+          continue;
+        }
+        defaults[toId(keyRaw)] = valueRaw.trim();
+      }
+    }
+  }
+
+  for (const attribute of attributes) {
+    if (defaults[attribute.id]) {
+      continue;
+    }
+    if (attribute.options.length > 0) {
+      defaults[attribute.id] = attribute.options[0].value;
+    }
+  }
+
+  return defaults;
 }
 
 async function requestStoreApi<T>(path: string, init?: RequestInit): Promise<T> {
@@ -160,6 +451,63 @@ export async function addCartItem(productId: number, quantity = 1): Promise<Stor
     body: JSON.stringify({ id: productId, quantity }),
   });
   return mapRawCart(raw);
+}
+
+export async function addVariableCartItem(
+  productId: number,
+  variation: Array<{ attribute: string; value: string }>,
+  quantity = 1,
+): Promise<StorefrontCart> {
+  const sanitizedVariation = variation
+    .map((entry) => ({
+      attribute: entry.attribute.trim(),
+      value: entry.value.trim(),
+    }))
+    .filter((entry) => entry.attribute && entry.value);
+
+  const raw = await requestStoreApi<RawCart>("/cart/add-item", {
+    method: "POST",
+    body: JSON.stringify({
+      id: productId,
+      quantity,
+      ...(sanitizedVariation.length > 0 ? { variation: sanitizedVariation } : {}),
+    }),
+  });
+  return mapRawCart(raw);
+}
+
+export async function fetchVariableConfig(productId: number): Promise<StorefrontVariableConfig> {
+  const raw = await requestStoreApi<unknown>(`/products/${productId}`);
+  const product = asRecord(raw);
+
+  if (!product) {
+    return {
+      isVariable: false,
+      attributes: [],
+      defaults: {},
+    };
+  }
+
+  const type = typeof product.type === "string" ? product.type.trim().toLowerCase() : "";
+  const hasOptions = Boolean(product.has_options);
+  const isVariable = type === "variable" || hasOptions;
+
+  if (!isVariable) {
+    return {
+      isVariable: false,
+      attributes: [],
+      defaults: {},
+    };
+  }
+
+  const attributes = parseVariationAttributes(product);
+  const defaults = parseVariationDefaults(product, attributes);
+
+  return {
+    isVariable: true,
+    attributes,
+    defaults,
+  };
 }
 
 export async function updateCartItemQuantity(key: string, quantity: number): Promise<StorefrontCart> {
