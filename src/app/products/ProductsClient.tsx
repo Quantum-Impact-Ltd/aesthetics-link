@@ -286,14 +286,17 @@ function ShopCard({
 
 export default function ProductsClient({
   initialProducts,
-  initialCategory,
+  initialConcern,
+  initialBrand,
 }: {
   initialProducts: StorefrontCatalogProduct[];
-  initialCategory: string;
+  initialConcern: string;
+  initialBrand: string;
 }) {
   const navigation = useStorefrontNavigation();
   const [products, setProducts] = useState<StorefrontCatalogProduct[]>(initialProducts);
-  const [activeFilter, setActiveFilter] = useState(initialCategory);
+  const [activeConcern, setActiveConcern] = useState(initialConcern);
+  const [activeBrand, setActiveBrand] = useState(initialBrand);
   const [cartOpen, setCartOpen] = useState(false);
   const [isWholesaleViewer, setIsWholesaleViewer] = useState(false);
   const [cart, setCart] = useState<StorefrontCart>({
@@ -320,36 +323,49 @@ export default function ProductsClient({
       .replace(/^-+|-+$/g, "");
   };
 
+  const extractNavFilterOptions = useMemo(() => {
+    return (
+      links: Array<{ href: string; label: string }>,
+      key: "concern" | "brand",
+    ): Array<{ slug: string; label: string }> => {
+      const deduped = new Map<string, string>();
+
+      for (const link of links) {
+        if (!link?.href || !link?.label) {
+          continue;
+        }
+
+        let slug = "";
+        try {
+          const url = new URL(link.href, "https://storefront.local");
+          slug = normalizeFilterSlug(url.searchParams.get(key));
+        } catch {
+          slug = "";
+        }
+
+        if (!slug || deduped.has(slug)) {
+          continue;
+        }
+
+        deduped.set(slug, link.label);
+      }
+
+      return Array.from(deduped.entries()).map(([slug, label]) => ({ slug, label }));
+    };
+  }, []);
+
   const concernFilters = useMemo(() => {
     const links = navigation?.concerns ?? [];
-    const deduped = new Map<string, string>();
+    return extractNavFilterOptions(links, "concern");
+  }, [navigation, extractNavFilterOptions]);
 
-    for (const link of links) {
-      if (!link?.href || !link?.label) {
-        continue;
-      }
-
-      let slug = "";
-      try {
-        const url = new URL(link.href, "https://storefront.local");
-        slug = normalizeFilterSlug(url.searchParams.get("concern"));
-      } catch {
-        slug = "";
-      }
-
-      if (!slug || deduped.has(slug)) {
-        continue;
-      }
-
-      deduped.set(slug, link.label);
-    }
-
-    return Array.from(deduped.entries()).map(([slug, label]) => ({ slug, label }));
-  }, [navigation]);
+  const brandFilters = useMemo(() => {
+    const links = navigation?.brands ?? [];
+    return extractNavFilterOptions(links, "brand");
+  }, [navigation, extractNavFilterOptions]);
 
   const productCategoryIndex = useMemo(() => {
     return products.map((product) => {
-      const primarySlug = normalizeFilterSlug(product.categorySlug);
       const allSlugs = Array.from(
         new Set(
           [product.categorySlug, ...product.categorySlugs]
@@ -360,13 +376,29 @@ export default function ProductsClient({
 
       return {
         product,
-        primarySlug,
         allSlugs,
       };
     });
   }, [products]);
 
-  const categoryBuckets = useMemo(() => {
+  const productBrandIndex = useMemo(() => {
+    return products.map((product) => {
+      const allSlugs = Array.from(
+        new Set(
+          [product.brandSlug, ...(product.brandSlugs ?? [])]
+            .map((slug) => normalizeFilterSlug(slug))
+            .filter(Boolean),
+        ),
+      );
+
+      return {
+        product,
+        allSlugs,
+      };
+    });
+  }, [products]);
+
+  const concernBuckets = useMemo(() => {
     const buckets = new Map<string, StorefrontCatalogProduct[]>();
 
     for (const entry of productCategoryIndex) {
@@ -380,13 +412,35 @@ export default function ProductsClient({
     return buckets;
   }, [productCategoryIndex]);
 
-  const categories = useMemo(() => {
+  const brandBuckets = useMemo(() => {
+    const buckets = new Map<string, StorefrontCatalogProduct[]>();
+
+    for (const entry of productBrandIndex) {
+      for (const slug of entry.allSlugs) {
+        const existing = buckets.get(slug) ?? [];
+        existing.push(entry.product);
+        buckets.set(slug, existing);
+      }
+    }
+
+    return buckets;
+  }, [productBrandIndex]);
+
+  const concernOptions = useMemo(() => {
     if (concernFilters.length === 0) {
       return [{ slug: "all", label: "All" }];
     }
 
     return [{ slug: "all", label: "All" }, ...concernFilters];
   }, [concernFilters]);
+
+  const brandOptions = useMemo(() => {
+    if (brandFilters.length === 0) {
+      return [{ slug: "all", label: "All" }];
+    }
+
+    return [{ slug: "all", label: "All" }, ...brandFilters];
+  }, [brandFilters]);
 
   useEffect(() => {
     void refreshCart();
@@ -397,8 +451,12 @@ export default function ProductsClient({
   }, [initialProducts]);
 
   useEffect(() => {
-    setActiveFilter(initialCategory);
-  }, [initialCategory]);
+    setActiveConcern(initialConcern);
+  }, [initialConcern]);
+
+  useEffect(() => {
+    setActiveBrand(initialBrand);
+  }, [initialBrand]);
 
   useEffect(() => {
     let active = true;
@@ -492,16 +550,38 @@ export default function ProductsClient({
   }, [initialProducts]);
 
   useEffect(() => {
-    if (!categories.some((category) => category.slug === activeFilter)) {
-      setActiveFilter("all");
+    if (!concernOptions.some((option) => option.slug === activeConcern)) {
+      setActiveConcern("all");
     }
-  }, [categories, activeFilter]);
+  }, [concernOptions, activeConcern]);
 
-  const normalizedActiveFilter = normalizeFilterSlug(activeFilter);
-  const filtered =
-    normalizedActiveFilter === "all"
+  useEffect(() => {
+    if (!brandOptions.some((option) => option.slug === activeBrand)) {
+      setActiveBrand("all");
+    }
+  }, [brandOptions, activeBrand]);
+
+  const normalizedActiveConcern = normalizeFilterSlug(activeConcern);
+  const normalizedActiveBrand = normalizeFilterSlug(activeBrand);
+  const concernFiltered =
+    normalizedActiveConcern === "all"
       ? products
-      : categoryBuckets.get(normalizedActiveFilter) ?? products;
+      : concernBuckets.get(normalizedActiveConcern) ?? [];
+  const brandFiltered =
+    normalizedActiveBrand === "all"
+      ? products
+      : brandBuckets.get(normalizedActiveBrand) ?? [];
+  const filtered =
+    normalizedActiveConcern === "all" && normalizedActiveBrand === "all"
+      ? products
+      : normalizedActiveConcern === "all"
+        ? brandFiltered
+        : normalizedActiveBrand === "all"
+          ? concernFiltered
+          : (() => {
+              const brandSet = new Set(brandFiltered.map((product) => product.slug));
+              return concernFiltered.filter((product) => brandSet.has(product.slug));
+            })();
 
   async function refreshCart(): Promise<void> {
     const nextCart = await fetchCart();
@@ -591,20 +671,40 @@ export default function ProductsClient({
           <div className="container shop-layout">
             <aside className="shop-sidebar reveal-up" data-reveal>
               <h3 className="shop-sidebar__title">
-                <FilterIcon /> Categories
+                <FilterIcon /> Filters
               </h3>
-              <ul className="shop-sidebar__list" role="group" aria-label="Filter products">
-                {categories.map((category) => (
-                  <li key={category.slug}>
-                    <button
-                      className={`shop-sidebar__link${activeFilter === category.slug ? " active" : ""}`}
-                      onClick={() => setActiveFilter(category.slug)}
-                    >
-                      {category.label}
-                    </button>
-                  </li>
-                ))}
-              </ul>
+
+              <div className="shop-sidebar__group">
+                <p className="shop-sidebar__group-label superscript">By Concern</p>
+                <ul className="shop-sidebar__list" role="group" aria-label="Filter products by concern">
+                  {concernOptions.map((concern) => (
+                    <li key={concern.slug}>
+                      <button
+                        className={`shop-sidebar__link${activeConcern === concern.slug ? " active" : ""}`}
+                        onClick={() => setActiveConcern(concern.slug)}
+                      >
+                        {concern.label}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              <div className="shop-sidebar__group">
+                <p className="shop-sidebar__group-label superscript">By Brand</p>
+                <ul className="shop-sidebar__list" role="group" aria-label="Filter products by brand">
+                  {brandOptions.map((brand) => (
+                    <li key={brand.slug}>
+                      <button
+                        className={`shop-sidebar__link${activeBrand === brand.slug ? " active" : ""}`}
+                        onClick={() => setActiveBrand(brand.slug)}
+                      >
+                        {brand.label}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
               <div className="shop-sidebar__count">
                 Showing {filtered.length} {filtered.length === 1 ? "product" : "products"}
               </div>
@@ -624,8 +724,14 @@ export default function ProductsClient({
                 </div>
               ) : (
                 <div className="shop-empty">
-                  <p>No products found in this category.</p>
-                  <button className="btn" onClick={() => setActiveFilter("all")}>
+                  <p>No products found for this filter combination.</p>
+                  <button
+                    className="btn"
+                    onClick={() => {
+                      setActiveConcern("all");
+                      setActiveBrand("all");
+                    }}
+                  >
                     View all products
                   </button>
                 </div>

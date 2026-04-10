@@ -46,38 +46,9 @@ function isNewArrivalSlug(slug: string): boolean {
 export default async function ProductsPage({ searchParams }: Props) {
   const params = await searchParams;
   const sort = normalizeSort(params.sort);
-  const categoryFilter = normalizeSlug(params.category) ?? normalizeSlug(params.concern);
+  const concernFilter = normalizeSlug(params.category) ?? normalizeSlug(params.concern);
   const brandFilter = normalizeSlug(params.brand);
-  let catalog = await getCatalogProducts(brandFilter ? { brand: brandFilter } : undefined);
-
-  // Some Woo setups ignore `brand` on Store API products; retry with full catalog.
-  if (brandFilter && catalog.length === 0) {
-    catalog = await getCatalogProducts();
-  }
-
-  if (brandFilter) {
-    const filteredByBrand = catalog.filter((product) => {
-      const allBrandSlugs = [
-        product.brandSlug,
-        ...(product.brandSlugs ?? []),
-      ]
-        .map((slug) => normalizeSlug(slug))
-        .filter((slug): slug is string => Boolean(slug));
-
-      return allBrandSlugs.includes(brandFilter);
-    });
-
-    const hasBrandMetadata = catalog.some((product) => {
-      const allBrandSlugs = [product.brandSlug, ...(product.brandSlugs ?? [])]
-        .map((slug) => normalizeSlug(slug))
-        .filter((slug): slug is string => Boolean(slug));
-      return allBrandSlugs.length > 0;
-    });
-
-    if (filteredByBrand.length > 0 || hasBrandMetadata) {
-      catalog = filteredByBrand;
-    }
-  }
+  let catalog = await getCatalogProducts();
 
   if (sort === "new") {
     const tagged = catalog.filter((product) =>
@@ -101,19 +72,33 @@ export default async function ProductsPage({ searchParams }: Props) {
           });
   }
 
-  const normalizedRequestedCategory =
-    typeof categoryFilter === "string" ? categoryFilter : undefined;
-
-  const initialCategory =
-    normalizedRequestedCategory &&
+  const initialConcern =
+    concernFilter &&
     catalog.some((product) => {
       const allSlugs = [product.categorySlug, ...product.categorySlugs]
         .map((slug) => normalizeSlug(slug))
         .filter((slug): slug is string => Boolean(slug));
-      return allSlugs.includes(normalizedRequestedCategory);
+      return allSlugs.includes(concernFilter);
     })
-      ? normalizedRequestedCategory
+      ? concernFilter
       : "all";
 
-  return <ProductsClient initialProducts={catalog} initialCategory={initialCategory} />;
+  const initialBrand =
+    brandFilter &&
+    catalog.some((product) => {
+      const allSlugs = [product.brandSlug, ...(product.brandSlugs ?? [])]
+        .map((slug) => normalizeSlug(slug))
+        .filter((slug): slug is string => Boolean(slug));
+      return allSlugs.includes(brandFilter);
+    })
+      ? brandFilter
+      : "all";
+
+  return (
+    <ProductsClient
+      initialProducts={catalog}
+      initialConcern={initialConcern}
+      initialBrand={initialBrand}
+    />
+  );
 }

@@ -5031,6 +5031,15 @@ h5,
   margin-bottom: 2rem;
 }
 
+.shop-sidebar__group:not(:last-of-type) {
+  margin-bottom: 2rem;
+}
+
+.shop-sidebar__group-label {
+  margin-bottom: 0.9rem;
+  color: var(--color-gray2);
+}
+
 .shop-sidebar__list {
   display: flex;
   flex-direction: column;
