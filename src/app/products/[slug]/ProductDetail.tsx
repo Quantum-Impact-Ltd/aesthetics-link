@@ -8,7 +8,7 @@ import MotionProvider from "@/components/MotionProvider";
 import { getMe, getWholesalePrices } from "@/lib/auth/client";
 import { addCartItem, addVariableCartItem, fetchVariableConfig } from "@/lib/storefront/client";
 import type { StorefrontDetailProduct, StorefrontVariableConfig } from "@/lib/storefront/types";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 function ArrowLongIcon() {
   return (
@@ -19,6 +19,10 @@ function ArrowLongIcon() {
       />
     </svg>
   );
+}
+
+function normalizeVariationComparable(value: string): string {
+  return value.trim().toLowerCase();
 }
 
 export default function ProductDetail({ product }: { product: StorefrontDetailProduct }) {
@@ -61,7 +65,7 @@ export default function ProductDetail({ product }: { product: StorefrontDetailPr
 
         if (!wholesale || !product.wooId || product.wooId <= 0) {
           setDisplayPrice(retail);
-          setDisplayRegularPrice(null);
+          setDisplayRegularPrice(product.regularPrice ?? null);
           setIsWholesalePrice(false);
           return;
         }
@@ -74,7 +78,7 @@ export default function ProductDetail({ product }: { product: StorefrontDetailPr
         const entry = prices.prices[String(product.wooId)];
         if (!entry || entry.source !== "wholesale" || !prices.isWholesaleViewer) {
           setDisplayPrice(retail);
-          setDisplayRegularPrice(null);
+          setDisplayRegularPrice(product.regularPrice ?? null);
           setIsWholesalePrice(false);
           return;
         }
@@ -88,7 +92,7 @@ export default function ProductDetail({ product }: { product: StorefrontDetailPr
         }
 
         setDisplayPrice(retail);
-        setDisplayRegularPrice(null);
+        setDisplayRegularPrice(product.regularPrice ?? null);
         setIsWholesalePrice(false);
       }
     }
@@ -98,7 +102,7 @@ export default function ProductDetail({ product }: { product: StorefrontDetailPr
     return () => {
       active = false;
     };
-  }, [product.price, product.wooId]);
+  }, [product.price, product.regularPrice, product.wooId]);
 
   useEffect(() => {
     let active = true;
@@ -162,9 +166,47 @@ export default function ProductDetail({ product }: { product: StorefrontDetailPr
   }, [isVariableProduct, product.wooId, product.variableConfig]);
 
   const variationAttributes = variationConfig?.attributes ?? [];
+  const variationEntries = variationConfig?.variations ?? [];
   const optionsReady = !isVariableProduct || variationAttributes.length > 0;
   const missingSelections = variationAttributes.filter((attribute) => !variationSelection[attribute.id]);
-  const canAddWithSelection = !isVariableProduct || (optionsReady && missingSelections.length === 0);
+  const selectedVariation = useMemo(() => {
+    if (!isVariableProduct || variationAttributes.length === 0 || variationEntries.length === 0) {
+      return null;
+    }
+
+    if (missingSelections.length > 0) {
+      return null;
+    }
+
+    return (
+      variationEntries.find((entry) =>
+        variationAttributes.every((attribute) => {
+          const selectedValue = variationSelection[attribute.id];
+          const entryValue = entry.attributes[attribute.id];
+          if (!selectedValue || !entryValue) {
+            return false;
+          }
+
+          return (
+            normalizeVariationComparable(selectedValue) ===
+            normalizeVariationComparable(entryValue)
+          );
+        }),
+      ) ?? null
+    );
+  }, [isVariableProduct, missingSelections.length, variationAttributes, variationEntries, variationSelection]);
+  const selectedVariationOutOfStock =
+    selectedVariation !== null &&
+    (selectedVariation.inStock === false || selectedVariation.stockStatus === "outofstock");
+  const canAddWithSelection =
+    !isVariableProduct ||
+    (optionsReady && missingSelections.length === 0 && !selectedVariationOutOfStock);
+  const effectivePrice =
+    !isWholesalePrice && selectedVariation?.price ? selectedVariation.price : displayPrice;
+  const effectiveRegularPrice =
+    !isWholesalePrice && selectedVariation
+      ? selectedVariation.regularPrice ?? null
+      : displayRegularPrice;
 
   const handleAddToBag = async () => {
     if (!product.wooId || adding || isOutOfStock || variationLoading) {
@@ -239,10 +281,10 @@ export default function ProductDetail({ product }: { product: StorefrontDetailPr
             </h1>
             <p className="product-intro__tagline">{product.tagline}</p>
             <p className="product-intro__price" style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
-              {isWholesalePrice && displayRegularPrice && displayRegularPrice !== displayPrice ? (
-                <span style={{ opacity: 0.6, textDecoration: "line-through", fontSize: "0.8em" }}>{displayRegularPrice}</span>
+              {effectiveRegularPrice && effectiveRegularPrice !== effectivePrice ? (
+                <span style={{ opacity: 0.6, textDecoration: "line-through", fontSize: "0.8em" }}>{effectiveRegularPrice}</span>
               ) : null}
-              <span>{displayPrice}</span>
+              <span>{effectivePrice}</span>
               {isWholesalePrice ? (
                 <span style={{ fontSize: "0.6em", letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--color-gray2)" }}>
                   Wholesale
@@ -289,6 +331,8 @@ export default function ProductDetail({ product }: { product: StorefrontDetailPr
             >
               {isOutOfStock
                 ? "Out of Stock"
+                : selectedVariationOutOfStock
+                  ? "Out of Stock"
                 : variationLoading
                   ? "Loading options..."
                   : !canAddWithSelection
@@ -305,6 +349,10 @@ export default function ProductDetail({ product }: { product: StorefrontDetailPr
             {isOutOfStock ? (
               <p className="product-intro__stock-note" role="status" aria-live="polite">
                 {stockMessage}
+              </p>
+            ) : selectedVariationOutOfStock ? (
+              <p className="product-intro__stock-note" role="status" aria-live="polite">
+                This variation is out of stock.
               </p>
             ) : null}
             {addStatus ? (

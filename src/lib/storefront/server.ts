@@ -443,6 +443,103 @@ function parseVariationDefaults(
   return defaults;
 }
 
+function parseVariationEntryAttributes(rawAttributes: unknown): Record<string, string> {
+  const attributes: Record<string, string> = {};
+
+  if (Array.isArray(rawAttributes)) {
+    for (const attributeRaw of rawAttributes) {
+      const attribute = asRecord(attributeRaw);
+      if (!attribute) {
+        continue;
+      }
+
+      const keyRaw =
+        (typeof attribute.attribute === "string" && attribute.attribute.trim()) ||
+        (typeof attribute.name === "string" && attribute.name.trim()) ||
+        "";
+      const valueRaw =
+        (typeof attribute.value === "string" && attribute.value.trim()) ||
+        (typeof attribute.option === "string" && attribute.option.trim()) ||
+        "";
+
+      if (!keyRaw || !valueRaw) {
+        continue;
+      }
+
+      attributes[toVariationId(keyRaw)] = valueRaw;
+    }
+
+    return attributes;
+  }
+
+  const attributesObject = asRecord(rawAttributes);
+  if (!attributesObject) {
+    return attributes;
+  }
+
+  for (const [rawKey, rawValue] of Object.entries(attributesObject)) {
+    if (typeof rawValue !== "string" || !rawValue.trim()) {
+      continue;
+    }
+    attributes[toVariationId(rawKey)] = rawValue.trim();
+  }
+
+  return attributes;
+}
+
+function toPriceLabelFromUnknown(raw: unknown): string | null {
+  const prices = asRecord(raw);
+  if (!prices || typeof prices.price !== "string") {
+    return null;
+  }
+  return toPriceLabel(prices as WooProductPrices) || null;
+}
+
+function parseVariationEntries(rawProduct: UnknownRecord): StorefrontVariableConfig["variations"] {
+  const variationsRaw = Array.isArray(rawProduct.variations) ? rawProduct.variations : [];
+  const parsed: StorefrontVariableConfig["variations"] = [];
+
+  for (const variationRaw of variationsRaw) {
+    const variation = asRecord(variationRaw);
+    if (!variation) {
+      continue;
+    }
+
+    const attributes = parseVariationEntryAttributes(variation.attributes);
+    if (Object.keys(attributes).length === 0) {
+      continue;
+    }
+
+    const prices = asRecord(variation.prices);
+    const price =
+      toPriceLabelFromUnknown(prices) ||
+      (typeof variation.price === "string" ? decodeEntities(variation.price).trim() : null);
+    const regularPrice =
+      toPriceLabelFromUnknown(prices ? { ...prices, price: prices.regular_price } : null) ||
+      (typeof variation.regular_price === "string"
+        ? decodeEntities(variation.regular_price).trim()
+        : null);
+    const inStock =
+      typeof variation.is_in_stock === "boolean"
+        ? variation.is_in_stock
+        : typeof variation.stock_status === "string"
+          ? variation.stock_status.trim().toLowerCase() !== "outofstock"
+          : null;
+
+    parsed.push({
+      id: typeof variation.id === "number" ? variation.id : undefined,
+      attributes,
+      price,
+      regularPrice,
+      inStock,
+      stockStatus:
+        typeof variation.stock_status === "string" ? variation.stock_status.trim().toLowerCase() : null,
+    });
+  }
+
+  return parsed;
+}
+
 function extractVariableConfig(rawProduct: UnknownRecord): StorefrontVariableConfig | null {
   const type = typeof rawProduct.type === "string" ? rawProduct.type.trim().toLowerCase() : "";
   const hasOptions = Boolean(rawProduct.has_options);
@@ -454,11 +551,13 @@ function extractVariableConfig(rawProduct: UnknownRecord): StorefrontVariableCon
 
   const attributes = parseVariationAttributes(rawProduct);
   const defaults = parseVariationDefaults(rawProduct, attributes);
+  const variations = parseVariationEntries(rawProduct);
 
   return {
     isVariable: true,
     attributes,
     defaults,
+    variations,
   };
 }
 

@@ -34,6 +34,7 @@ type RawCartItem = {
   name?: string;
   quantity?: number;
   images?: Array<{ src?: string; alt?: string }>;
+  variation?: unknown;
   prices?: RawPrice;
   totals?: {
     line_total?: string;
@@ -110,6 +111,19 @@ function toId(value: string): string {
     .replace(/^_+|_+$/g, "");
 }
 
+function normalizeVariationValue(value: string): string {
+  return decodeEntities(value).trim().toLowerCase();
+}
+
+function humanizeVariationLabel(value: string): string {
+  const cleaned = decodeEntities(value)
+    .trim()
+    .replace(/^attribute_/, "")
+    .replace(/^pa_/, "")
+    .replace(/[_-]+/g, " ");
+  return cleaned ? cleaned.replace(/\b\w/g, (match) => match.toUpperCase()) : "Option";
+}
+
 function uniqueOptions(options: Array<{ label: string; value: string }>): Array<{ label: string; value: string }> {
   const deduped = new Map<string, { label: string; value: string }>();
   for (const option of options) {
@@ -118,6 +132,179 @@ function uniqueOptions(options: Array<{ label: string; value: string }>): Array<
     }
     deduped.set(option.value, option);
   }
+  return Array.from(deduped.values());
+}
+
+function toPriceLabelFromRaw(raw: unknown): string | null {
+  const prices = asRecord(raw);
+  if (!prices) {
+    return null;
+  }
+
+  const rawValue = typeof prices.price === "string" ? prices.price : null;
+  if (!rawValue) {
+    return null;
+  }
+
+  return formatMoney(rawValue, {
+    currency_minor_unit:
+      typeof prices.currency_minor_unit === "number" ? prices.currency_minor_unit : undefined,
+    currency_prefix:
+      typeof prices.currency_prefix === "string" ? prices.currency_prefix : undefined,
+    currency_symbol:
+      typeof prices.currency_symbol === "string" ? prices.currency_symbol : undefined,
+    currency_suffix:
+      typeof prices.currency_suffix === "string" ? prices.currency_suffix : undefined,
+  });
+}
+
+function parseVariationEntryAttributes(rawAttributes: unknown): Record<string, string> {
+  const attributes: Record<string, string> = {};
+
+  if (Array.isArray(rawAttributes)) {
+    for (const attributeRaw of rawAttributes) {
+      const attribute = asRecord(attributeRaw);
+      if (!attribute) {
+        continue;
+      }
+
+      const keyRaw =
+        (typeof attribute.attribute === "string" && attribute.attribute.trim()) ||
+        (typeof attribute.name === "string" && attribute.name.trim()) ||
+        "";
+      const valueRaw =
+        (typeof attribute.value === "string" && attribute.value.trim()) ||
+        (typeof attribute.option === "string" && attribute.option.trim()) ||
+        "";
+
+      if (!keyRaw || !valueRaw) {
+        continue;
+      }
+
+      attributes[toId(keyRaw)] = valueRaw;
+    }
+
+    return attributes;
+  }
+
+  const attributesObject = asRecord(rawAttributes);
+  if (!attributesObject) {
+    return attributes;
+  }
+
+  for (const [rawKey, rawValue] of Object.entries(attributesObject)) {
+    if (typeof rawValue !== "string" || !rawValue.trim()) {
+      continue;
+    }
+    attributes[toId(rawKey)] = rawValue.trim();
+  }
+
+  return attributes;
+}
+
+function parseVariationEntries(rawProduct: Record<string, unknown>): StorefrontVariableConfig["variations"] {
+  const variationsRaw = Array.isArray(rawProduct.variations) ? rawProduct.variations : [];
+  const parsed: StorefrontVariableConfig["variations"] = [];
+
+  for (const variationRaw of variationsRaw) {
+    const variation = asRecord(variationRaw);
+    if (!variation) {
+      continue;
+    }
+
+    const attributes = parseVariationEntryAttributes(variation.attributes);
+    if (Object.keys(attributes).length === 0) {
+      continue;
+    }
+
+    const prices = asRecord(variation.prices);
+    const price =
+      toPriceLabelFromRaw(prices) ||
+      (typeof variation.price === "string" ? decodeEntities(variation.price).trim() : null);
+    const regularPrice =
+      toPriceLabelFromRaw(prices ? { ...prices, price: prices.regular_price } : null) ||
+      (typeof variation.regular_price === "string"
+        ? decodeEntities(variation.regular_price).trim()
+        : null);
+    const inStock =
+      typeof variation.is_in_stock === "boolean"
+        ? variation.is_in_stock
+        : typeof variation.stock_status === "string"
+          ? variation.stock_status.trim().toLowerCase() !== "outofstock"
+          : null;
+
+    parsed.push({
+      id: typeof variation.id === "number" ? variation.id : undefined,
+      attributes,
+      price,
+      regularPrice,
+      inStock,
+      stockStatus:
+        typeof variation.stock_status === "string" ? variation.stock_status.trim().toLowerCase() : null,
+    });
+  }
+
+  return parsed;
+}
+
+function parseCartItemVariations(input: unknown): Array<{ label: string; value: string }> {
+  const parsed: Array<{ label: string; value: string }> = [];
+
+  if (Array.isArray(input)) {
+    for (const entryRaw of input) {
+      const entry = asRecord(entryRaw);
+      if (!entry) {
+        continue;
+      }
+
+      const labelRaw =
+        (typeof entry.attribute_name === "string" && entry.attribute_name.trim()) ||
+        (typeof entry.name === "string" && entry.name.trim()) ||
+        (typeof entry.attribute === "string" && entry.attribute.trim()) ||
+        (typeof entry.key === "string" && entry.key.trim()) ||
+        "";
+      const valueRaw =
+        (typeof entry.value === "string" && entry.value.trim()) ||
+        (typeof entry.option === "string" && entry.option.trim()) ||
+        (typeof entry.display === "string" && entry.display.trim()) ||
+        "";
+
+      if (!labelRaw || !valueRaw) {
+        continue;
+      }
+
+      parsed.push({
+        label: humanizeVariationLabel(labelRaw),
+        value: decodeEntities(valueRaw).trim(),
+      });
+    }
+  } else {
+    const variationObject = asRecord(input);
+    if (!variationObject) {
+      return parsed;
+    }
+
+    for (const [rawKey, rawValue] of Object.entries(variationObject)) {
+      if (typeof rawValue !== "string" || !rawValue.trim()) {
+        continue;
+      }
+
+      parsed.push({
+        label: humanizeVariationLabel(rawKey),
+        value: decodeEntities(rawValue).trim(),
+      });
+    }
+  }
+
+  const deduped = new Map<string, { label: string; value: string }>();
+  for (const entry of parsed) {
+    const dedupeKey = `${normalizeVariationValue(entry.label)}::${normalizeVariationValue(entry.value)}`;
+    if (deduped.has(dedupeKey)) {
+      continue;
+    }
+    deduped.set(dedupeKey, entry);
+  }
+
   return Array.from(deduped.values());
 }
 
@@ -422,6 +609,7 @@ function mapRawCart(rawCart: RawCart): StorefrontCart {
       quantity: item.quantity ?? 1,
       price: formatMoney(item.prices?.price, priceContext),
       lineTotal: formatMoney(item.totals?.line_total ?? item.prices?.price, priceContext),
+      variations: parseCartItemVariations(item.variation),
       image: item.images?.[0]?.src ?? "/images/offer.jpg",
       imageAlt: item.images?.[0]?.alt ?? name,
       accentBg: ACCENT_COLORS[index % ACCENT_COLORS.length],
@@ -485,6 +673,7 @@ export async function fetchVariableConfig(productId: number): Promise<Storefront
       isVariable: false,
       attributes: [],
       defaults: {},
+      variations: [],
     };
   }
 
@@ -497,16 +686,19 @@ export async function fetchVariableConfig(productId: number): Promise<Storefront
       isVariable: false,
       attributes: [],
       defaults: {},
+      variations: [],
     };
   }
 
   const attributes = parseVariationAttributes(product);
   const defaults = parseVariationDefaults(product, attributes);
+  const variations = parseVariationEntries(product);
 
   return {
     isVariable: true,
     attributes,
     defaults,
+    variations,
   };
 }
 

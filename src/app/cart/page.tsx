@@ -111,6 +111,15 @@ export default function CartPage() {
                   <div className="cart-item-details">
                     <h3 className="cart-item-title">{item.shortName}</h3>
                     <p className="cart-item-desc">{item.name}</p>
+                    {item.variations.length > 0 ? (
+                      <ul className="cart-item-variations" aria-label="Selected options">
+                        {item.variations.map((variation) => (
+                          <li key={`${item.key}:${variation.label}:${variation.value}`}>
+                            <span>{variation.label}:</span> {variation.value}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
 
                     <div className="cart-item-actions">
                       <div className="cart-qty-toggle">

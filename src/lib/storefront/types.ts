@@ -48,6 +48,10 @@ export type StorefrontCartItem = {
   quantity: number;
   price: string;
   lineTotal: string;
+  variations: Array<{
+    label: string;
+    value: string;
+  }>;
   image: string;
   imageAlt: string;
   accentBg: string;
@@ -121,4 +125,12 @@ export type StorefrontVariableConfig = {
   isVariable: boolean;
   attributes: StorefrontVariationAttribute[];
   defaults: Record<string, string>;
+  variations: Array<{
+    id?: number;
+    attributes: Record<string, string>;
+    price: string | null;
+    regularPrice: string | null;
+    inStock: boolean | null;
+    stockStatus: string | null;
+  }>;
 };

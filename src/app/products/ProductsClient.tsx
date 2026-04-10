@@ -103,6 +103,15 @@ function CartSidebar({
                   <div className="shop-cart-item__info">
                     <p className="shop-cart-item__name">{item.name}</p>
                     <p className="shop-cart-item__price">{item.price}</p>
+                    {item.variations.length > 0 ? (
+                      <ul className="shop-cart-item__variations" aria-label="Selected options">
+                        {item.variations.map((variation) => (
+                          <li key={`${item.key}:${variation.label}:${variation.value}`}>
+                            <span>{variation.label}:</span> {variation.value}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
                     <div className="shop-cart-item__qty">
                       <button
                         onClick={() => onQty(item.key, Math.max(1, item.quantity - 1))}
