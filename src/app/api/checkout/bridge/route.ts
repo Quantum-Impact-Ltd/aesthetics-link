@@ -118,7 +118,8 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   ).toString("base64url");
 
   const signature = signPayload(payload, secret);
-  const bridgeUrl = new URL(checkoutUrl);
+  const bridgeUrl = new URL("/wp-admin/admin-ajax.php", baseUrl);
+  bridgeUrl.searchParams.set("action", "al_b2b_checkout_bridge");
   bridgeUrl.searchParams.set("al_b2b_checkout_bridge", payload);
   bridgeUrl.searchParams.set("sig", signature);
 

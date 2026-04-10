@@ -35,7 +35,8 @@ add_action('admin_menu', 'al_b2b_register_admin_menu');
 add_action('admin_init', 'al_b2b_handle_admin_actions');
 add_action('rest_api_init', 'al_b2b_register_routes');
 add_action(AL_B2B_CLEANUP_EVENT, 'al_b2b_cleanup_expired_sessions');
-add_action('template_redirect', 'al_b2b_maybe_handle_checkout_bridge', 1);
+add_action('wp_ajax_al_b2b_checkout_bridge', 'al_b2b_maybe_handle_checkout_bridge');
+add_action('wp_ajax_nopriv_al_b2b_checkout_bridge', 'al_b2b_maybe_handle_checkout_bridge');
 
 function al_b2b_activate() {
 	al_b2b_ensure_roles();
@@ -851,9 +852,11 @@ function al_b2b_maybe_handle_checkout_bridge() {
 			exit;
 		}
 
+		$bridge_user_id = isset($payload['userId']) ? (int) $payload['userId'] : 0;
+
 		$sync_result = al_b2b_sync_wc_cart_from_store_token(
 			$payload['cartToken'],
-			isset($payload['userId']) ? (int) $payload['userId'] : 0
+			$bridge_user_id
 		);
 		if (empty($sync_result['ok'])) {
 			al_b2b_log_checkout_bridge_error('Bridge cart sync did not complete successfully.', array(
@@ -867,6 +870,13 @@ function al_b2b_maybe_handle_checkout_bridge() {
 				isset($sync_result['error_code']) ? $sync_result['error_code'] : 'bridge_sync_failed'
 			));
 			exit;
+		}
+
+		// Log the user into WordPress so they arrive at checkout already authenticated.
+		// For guests (no userId), WooCommerce guest checkout handles the session.
+		if ($bridge_user_id > 0) {
+			wp_set_current_user($bridge_user_id);
+			wp_set_auth_cookie($bridge_user_id, true);
 		}
 
 		wp_safe_redirect($checkout_url);
