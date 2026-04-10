@@ -768,6 +768,10 @@ export async function getDetailProductBySlug(slug: string): Promise<StorefrontDe
       { tags: ["woo:products", `woo:product:${slug}`], revalidate: 300 },
     );
 
+    if (response.errors?.length) {
+      console.error(`[GraphQL] getDetailProductBySlug(${slug}) errors:`, JSON.stringify(response.errors));
+    }
+
     const product = response.data?.product ?? null;
 
     if (!product) {
@@ -775,7 +779,8 @@ export async function getDetailProductBySlug(slug: string): Promise<StorefrontDe
     }
 
     return mapGQLToDetailProduct(product);
-  } catch {
+  } catch (err) {
+    console.error(`[GraphQL] getDetailProductBySlug(${slug}) failed:`, err);
     return getProductBySlug(slug) ?? null;
   }
 }

@@ -15,15 +15,15 @@ export type GQLProductBrand = {
 
 export type GQLProductAttribute = {
   name: string;
-  label: string;
+  label?: string;
   options: string[];
-  variation: boolean;
+  variation?: boolean;
 };
 
 export type GQLVariationAttribute = {
   name: string;
   value: string;
-  label: string;
+  label?: string;
 };
 
 export type GQLProductVariation = {

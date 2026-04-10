@@ -21,7 +21,6 @@ export const GET_PRODUCT_BY_SLUG = `
         description
         shortDescription
         image { sourceUrl altText }
-        galleryImages(first: 3) { nodes { sourceUrl altText } }
         productCategories(first: 5) { nodes { name slug } }
       }
       ... on SimpleProduct {
@@ -29,13 +28,15 @@ export const GET_PRODUCT_BY_SLUG = `
         regularPrice
         salePrice
         stockStatus
+        galleryImages(first: 3) { nodes { sourceUrl altText } }
       }
       ... on VariableProduct {
         price
         regularPrice
         salePrice
         stockStatus
-        attributes { nodes { name label options variation } }
+        galleryImages(first: 3) { nodes { sourceUrl altText } }
+        attributes { nodes { name options } }
         defaultAttributes { nodes { name value } }
         variations(first: 100) {
           nodes {
@@ -44,7 +45,7 @@ export const GET_PRODUCT_BY_SLUG = `
             price
             regularPrice
             salePrice
-            attributes { nodes { name value label } }
+            attributes { nodes { name value } }
           }
         }
       }
