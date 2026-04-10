@@ -1,6 +1,3 @@
-import Footer from "@/components/Footer";
-import Header from "@/components/Header";
-import MotionProvider from "@/components/MotionProvider";
 import { getOrderConfirmation } from "@/lib/storefront/server";
 import type { StorefrontOrderAddress, StorefrontOrderConfirmation } from "@/lib/storefront/types";
 
@@ -15,31 +12,29 @@ function getSingleParam(
 }
 
 function AddressBlock({
-  title,
+  label,
   address,
 }: {
-  title: string;
+  label: string;
   address: StorefrontOrderAddress;
 }) {
   const lines = address.lines.filter(Boolean);
-  const contactLines = [address.email, address.phone].filter(Boolean);
+  const contacts = [address.email, address.phone].filter(Boolean);
 
   return (
-    <section className="order-confirmed-card">
-      <div className="order-confirmed-card__eyebrow">{title}</div>
-      <div className="order-confirmed-address">
-        {address.name ? <p className="order-confirmed-address__name">{address.name}</p> : null}
-        {lines.map((line) => (
-          <p key={`${title}:${line}`}>{line}</p>
-        ))}
-        {contactLines.length > 0 ? (
-          <div className="order-confirmed-address__contact">
-            {contactLines.map((line) => (
-              <p key={`${title}:contact:${line}`}>{line}</p>
-            ))}
-          </div>
-        ) : null}
-      </div>
+    <section className="order-receipt__address-block">
+      <div className="order-receipt__kicker">{label}</div>
+      {address.name ? <p className="order-receipt__address-name">{address.name}</p> : null}
+      {lines.map((line) => (
+        <p key={`${label}:${line}`}>{line}</p>
+      ))}
+      {contacts.length > 0 ? (
+        <div className="order-receipt__address-contact">
+          {contacts.map((contact) => (
+            <p key={`${label}:contact:${contact}`}>{contact}</p>
+          ))}
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -52,23 +47,32 @@ function OrderFallback({
   hasMissingQuery: boolean;
 }) {
   return (
-    <section className="order-confirmed-fallback order-confirmed-card">
-      <div className="order-confirmed-card__eyebrow">Confirmation Unavailable</div>
-      <h2 className="order-confirmed-fallback__title">
-        {hasMissingQuery ? "We could not verify this order confirmation." : "We could not load the full order details."}
-      </h2>
-      <p className="order-confirmed-fallback__text">
-        {hasMissingQuery
-          ? "This page is missing the order reference required to display your receipt. Please return using your confirmation email."
-          : "The order appears to be complete, but the receipt details could not be loaded right now. Please use your confirmation email or contact support if you need immediate assistance."}
-      </p>
-      {orderNumber ? (
-        <div className="order-confirmed-fallback__reference">
-          <span>Reference</span>
-          <strong>Order #{orderNumber}</strong>
+    <article className="order-receipt order-receipt--fallback">
+      <header className="order-receipt__header">
+        <div>
+          <p className="order-receipt__brand">AestheticsLink</p>
+          <div className="order-receipt__kicker">Order Confirmation</div>
         </div>
+      </header>
+
+      <section className="order-receipt__section">
+        <h1 className="order-receipt__title">
+          {hasMissingQuery ? "We could not verify this order receipt." : "We could not load the full order details."}
+        </h1>
+        <p className="order-receipt__summary">
+          {hasMissingQuery
+            ? "This page is missing the reference required to display the completed receipt. Please reopen the confirmation email and use that link."
+            : "The order appears complete, but the receipt data could not be loaded right now. Please use your confirmation email if you need to review the order immediately."}
+        </p>
+      </section>
+
+      {orderNumber ? (
+        <section className="order-receipt__section order-receipt__reference-row">
+          <span className="order-receipt__kicker">Reference</span>
+          <strong>Order #{orderNumber}</strong>
+        </section>
       ) : null}
-    </section>
+    </article>
   );
 }
 
@@ -76,118 +80,132 @@ function OrderReceipt({ order }: { order: StorefrontOrderConfirmation }) {
   const shippingAddress = order.shippingAddress.lines.length > 0 ? order.shippingAddress : order.billingAddress;
 
   return (
-    <div className="order-confirmed-layout">
-      <section className="order-confirmed-primary">
-        <div className="order-confirmed-card order-confirmed-card--items">
-          <div className="order-confirmed-card__header">
-            <div>
-              <div className="order-confirmed-card__eyebrow">Order Items</div>
-              <h2 className="order-confirmed-card__title">
-                {order.itemCount} {order.itemCount === 1 ? "item" : "items"} confirmed
-              </h2>
-            </div>
-            <div className="order-confirmed-card__meta">
-              <span>{order.statusLabel}</span>
-              <span>{order.createdAt}</span>
-            </div>
+    <article className="order-receipt" aria-labelledby="order-receipt-title">
+      <header className="order-receipt__header">
+        <div className="order-receipt__masthead">
+          <div>
+            <p className="order-receipt__brand">AestheticsLink</p>
+            <div className="order-receipt__kicker">Formal Order Receipt</div>
+          </div>
+          <div className="order-receipt__status-block">
+            <span className="order-receipt__status-label">Status</span>
+            <strong>{order.statusLabel}</strong>
+          </div>
+        </div>
+
+        <div className="order-receipt__hero">
+          <div>
+            <h1 id="order-receipt-title" className="order-receipt__title">
+              Order received and recorded.
+            </h1>
+            <p className="order-receipt__summary">
+              This document confirms the submitted order, payment reference, delivery address, and line-item totals.
+            </p>
           </div>
 
-          <div className="order-confirmed-items">
+          <dl className="order-receipt__meta-grid">
+            <div>
+              <dt>Order Number</dt>
+              <dd>#{order.orderNumber}</dd>
+            </div>
+            <div>
+              <dt>Placed</dt>
+              <dd>{order.createdAt}</dd>
+            </div>
+            <div>
+              <dt>Payment</dt>
+              <dd>{order.paymentMethod || "Payment recorded"}</dd>
+            </div>
+            <div>
+              <dt>Items</dt>
+              <dd>{order.itemCount}</dd>
+            </div>
+          </dl>
+        </div>
+      </header>
+
+      <section className="order-receipt__section order-receipt__address-grid">
+        <AddressBlock label="Delivery Address" address={shippingAddress} />
+        <AddressBlock label="Billing Address" address={order.billingAddress} />
+      </section>
+
+      <section className="order-receipt__section">
+        <div className="order-receipt__section-head">
+          <div className="order-receipt__kicker">Line Items</div>
+          <p>{order.itemCount} confirmed {order.itemCount === 1 ? "item" : "items"}</p>
+        </div>
+
+        <div className="order-receipt__table" role="table" aria-label="Ordered items">
+          <div className="order-receipt__table-head" role="row">
+            <span role="columnheader">Item</span>
+            <span role="columnheader">Qty</span>
+            <span role="columnheader">Unit</span>
+            <span role="columnheader">Total</span>
+          </div>
+
+          <div className="order-receipt__table-body">
             {order.items.map((item) => (
-              <article key={`${item.id}:${item.variationId}:${item.name}`} className="order-confirmed-item">
-                <div className="order-confirmed-item__media">
-                  {item.image ? (
-                    <img src={item.image} alt={item.name} />
-                  ) : (
-                    <div className="order-confirmed-item__placeholder" aria-hidden="true">
-                      {item.name.charAt(0)}
-                    </div>
-                  )}
-                </div>
-
-                <div className="order-confirmed-item__content">
-                  <div className="order-confirmed-item__header">
-                    <div>
-                      <h3>{item.name}</h3>
-                      {item.sku ? <p className="order-confirmed-item__sku">SKU {item.sku}</p> : null}
-                    </div>
-                    <div className="order-confirmed-item__price">{item.lineTotal}</div>
+              <div
+                key={`${item.id}:${item.variationId}:${item.name}`}
+                className="order-receipt__table-row"
+                role="row"
+              >
+                <div className="order-receipt__table-item" role="cell">
+                  <strong>{item.name}</strong>
+                  <div className="order-receipt__table-item-meta">
+                    {item.sku ? <span>SKU {item.sku}</span> : null}
+                    {item.meta.map((meta) => (
+                      <span key={`${item.name}:${meta.label}:${meta.value}`}>
+                        {meta.label}: {meta.value}
+                      </span>
+                    ))}
                   </div>
-
-                  <div className="order-confirmed-item__detail-row">
-                    <span>Qty {item.quantity}</span>
-                    <span>{item.unitPrice} each</span>
-                  </div>
-
-                  {item.meta.length > 0 ? (
-                    <ul className="order-confirmed-item__meta-list" aria-label={`Order attributes for ${item.name}`}>
-                      {item.meta.map((meta) => (
-                        <li key={`${item.name}:${meta.label}:${meta.value}`}>
-                          <span>{meta.label}</span>
-                          <strong>{meta.value}</strong>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : null}
                 </div>
-              </article>
+                <span role="cell">{item.quantity}</span>
+                <span role="cell">{item.unitPrice}</span>
+                <strong role="cell">{item.lineTotal}</strong>
+              </div>
             ))}
           </div>
         </div>
       </section>
 
-      <aside className="order-confirmed-sidebar">
-        <section className="order-confirmed-card order-confirmed-card--summary">
-          <div className="order-confirmed-card__eyebrow">Order Summary</div>
-          <div className="order-confirmed-summary__rows">
-            <div>
-              <span>Order number</span>
-              <strong>#{order.orderNumber}</strong>
-            </div>
-            <div>
-              <span>Payment</span>
-              <strong>{order.paymentMethod || "Payment recorded"}</strong>
-            </div>
-            <div>
-              <span>Subtotal</span>
-              <strong>{order.totals.subtotal}</strong>
-            </div>
-            <div>
-              <span>Shipping</span>
-              <strong>{order.totals.shipping}</strong>
-            </div>
-            <div>
-              <span>Tax</span>
-              <strong>{order.totals.tax}</strong>
-            </div>
-            <div className="order-confirmed-summary__total">
-              <span>Total</span>
-              <strong>{order.totals.total}</strong>
-            </div>
-          </div>
-        </section>
-
-        <div className="order-confirmed-sidebar__split">
-          <AddressBlock title="Delivery Address" address={shippingAddress} />
-          <AddressBlock title="Billing Address" address={order.billingAddress} />
-        </div>
-
-        <section className="order-confirmed-card order-confirmed-card--next-steps">
-          <div className="order-confirmed-card__eyebrow">Next Steps</div>
-          <ul className="order-confirmed-next-steps">
+      <section className="order-receipt__section order-receipt__footer-grid">
+        <div className="order-receipt__next-steps">
+          <div className="order-receipt__kicker">Operational Notes</div>
+          <ul>
             <li>A confirmation email has been issued to the billing contact.</li>
-            <li>Keep order #{order.orderNumber} for any support or account queries.</li>
+            <li>Keep order #{order.orderNumber} for account or support queries.</li>
             <li>Delivery updates will follow once fulfillment begins.</li>
           </ul>
           {order.customerNote ? (
-            <div className="order-confirmed-note">
-              <span>Order note</span>
+            <div className="order-receipt__customer-note">
+              <span>Order Note</span>
               <p>{order.customerNote}</p>
             </div>
           ) : null}
-        </section>
-      </aside>
-    </div>
+        </div>
+
+        <div className="order-receipt__totals">
+          <div>
+            <span>Subtotal</span>
+            <strong>{order.totals.subtotal}</strong>
+          </div>
+          <div>
+            <span>Shipping</span>
+            <strong>{order.totals.shipping}</strong>
+          </div>
+          <div>
+            <span>Tax</span>
+            <strong>{order.totals.tax}</strong>
+          </div>
+          <div className="order-receipt__grand-total">
+            <span>Total</span>
+            <strong>{order.totals.total}</strong>
+          </div>
+        </div>
+      </section>
+    </article>
   );
 }
 
@@ -210,52 +228,17 @@ export default async function OrderConfirmedPage({
     }
   }
 
-  const orderNumber = order?.orderNumber ?? orderId;
+  const fallbackOrderNumber = order ? order.orderNumber : orderId;
 
   return (
-    <div className="order-confirmed-page">
-      <MotionProvider />
-      <Header />
-
-      <main className="order-confirmed-main">
-        <section className="container order-confirmed-shell">
-          <header className="order-confirmed-hero">
-            <div className="order-confirmed-hero__status">Order Confirmed</div>
-            <div className="order-confirmed-hero__grid">
-              <div className="order-confirmed-hero__copy">
-                <p className="order-confirmed-hero__eyebrow">Transaction Complete</p>
-                <h1>Thank you. Your order has been received and recorded.</h1>
-                <p className="order-confirmed-hero__text">
-                  This page is your transaction receipt. Review the confirmed items, totals, and delivery information below.
-                </p>
-              </div>
-
-              <div className="order-confirmed-hero__meta">
-                <div>
-                  <span>Order reference</span>
-                  <strong>{orderNumber ? `#${orderNumber}` : "Unavailable"}</strong>
-                </div>
-                <div>
-                  <span>Status</span>
-                  <strong>{order?.statusLabel ?? "Confirmed"}</strong>
-                </div>
-                <div>
-                  <span>Placed</span>
-                  <strong>{order?.createdAt ?? "Awaiting details"}</strong>
-                </div>
-              </div>
-            </div>
-          </header>
-
-          {order ? (
-            <OrderReceipt order={order} />
-          ) : (
-            <OrderFallback orderNumber={orderNumber} hasMissingQuery={hasMissingQuery} />
-          )}
-        </section>
-      </main>
-
-      <Footer />
-    </div>
+    <main className="order-receipt-page">
+      <div className="order-receipt-page__frame">
+        {order ? (
+          <OrderReceipt order={order} />
+        ) : (
+          <OrderFallback orderNumber={fallbackOrderNumber} hasMissingQuery={hasMissingQuery} />
+        )}
+      </div>
+    </main>
   );
 }
