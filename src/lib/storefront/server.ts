@@ -722,16 +722,17 @@ export async function getCatalogProducts(options?: {
   brand?: string;
 }): Promise<StorefrontCatalogProduct[]> {
   try {
-    const where: Record<string, unknown> = {
-      orderby: [{ field: "MENU_ORDER", order: "ASC" }],
-      status: "publish",
-    };
-
+    // No status/orderby filter — WooGraphQL returns published products by default.
+    // Orderby enum values vary by WooGraphQL version; omit to use WooCommerce defaults.
     const response = await gql<GQLProductsResponse>(
       GET_CATALOG_PRODUCTS,
-      { first: 100, where },
+      { first: 100 },
       { tags: ["woo:products"], revalidate: 300 },
     );
+
+    if (response.errors?.length) {
+      console.error("[GraphQL] getCatalogProducts errors:", JSON.stringify(response.errors));
+    }
 
     const nodes = response.data?.products?.nodes ?? [];
 
@@ -753,7 +754,8 @@ export async function getCatalogProducts(options?: {
     }
 
     return mapped;
-  } catch {
+  } catch (err) {
+    console.error("[GraphQL] getCatalogProducts failed:", err);
     return toCatalogFallback();
   }
 }

@@ -51,8 +51,8 @@ export const GET_PRODUCT_BY_SLUG = `
 `;
 
 export const GET_CATALOG_PRODUCTS = `
-  query GetCatalogProducts($first: Int!, $where: RootQueryToProductConnectionWhereArgs) {
-    products(first: $first, where: $where) {
+  query GetCatalogProducts($first: Int!) {
+    products(first: $first) {
       nodes {
         databaseId
         slug
