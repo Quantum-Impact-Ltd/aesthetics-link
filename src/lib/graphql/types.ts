@@ -61,7 +61,7 @@ export type GQLVariableProduct = GQLProductBase & {
   salePrice: string | null;
   stockStatus: string;
   attributes: { nodes: GQLProductAttribute[] };
-  defaultAttributes: { nodes: Array<{ name: string; value: string }> };
+  defaultAttributes: { nodes: Array<{ name: string; value: string }> } | null;
   variations: { nodes: GQLProductVariation[] };
 };
 

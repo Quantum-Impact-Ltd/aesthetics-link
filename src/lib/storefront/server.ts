@@ -176,7 +176,7 @@ function mapGQLToVariableConfig(product: GQLVariableProduct): StorefrontVariable
     .filter((attr) => attr.id && attr.options.length > 0);
 
   const defaults: Record<string, string> = {};
-  for (const def of product.defaultAttributes.nodes) {
+  for (const def of product.defaultAttributes?.nodes ?? []) {
     const id = toGqlAttributeId(def.name);
     if (id && def.value) {
       defaults[id] = def.value;
