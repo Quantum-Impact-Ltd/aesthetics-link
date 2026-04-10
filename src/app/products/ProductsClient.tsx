@@ -13,6 +13,7 @@ import {
 } from "@/lib/storefront/client";
 import type { StorefrontCart, StorefrontCatalogProduct } from "@/lib/storefront/types";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 function QuickCartIcon() {
@@ -303,6 +304,7 @@ export default function ProductsClient({
   initialBrand: string;
 }) {
   const navigation = useStorefrontNavigation();
+  const router = useRouter();
   const [products, setProducts] = useState<StorefrontCatalogProduct[]>(initialProducts);
   const [activeConcern, setActiveConcern] = useState(initialConcern);
   const [activeBrand, setActiveBrand] = useState(initialBrand);
@@ -622,6 +624,55 @@ export default function ProductsClient({
               return concernFiltered.filter((product) => brandSet.has(product.slug));
             })();
 
+  const syncFiltersToUrl = (nextConcern: string, nextBrand: string): void => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const normalizedConcern = normalizeFilterSlug(nextConcern);
+    const normalizedBrand = normalizeFilterSlug(nextBrand);
+    const params = new URLSearchParams(window.location.search);
+
+    if (!normalizedConcern || normalizedConcern === "all") {
+      params.delete("concern");
+      params.delete("category");
+    } else {
+      params.set("concern", normalizedConcern);
+      params.delete("category");
+    }
+
+    if (!normalizedBrand || normalizedBrand === "all") {
+      params.delete("brand");
+    } else {
+      params.set("brand", normalizedBrand);
+    }
+
+    const nextQuery = params.toString();
+    const pathname = window.location.pathname || "/products";
+    const nextHref = nextQuery ? `${pathname}?${nextQuery}` : pathname;
+    const currentHref = `${window.location.pathname}${window.location.search}`;
+
+    if (nextHref !== currentHref) {
+      router.replace(nextHref, { scroll: false });
+    }
+  };
+
+  const handleConcernSelect = (nextConcern: string): void => {
+    setActiveConcern(nextConcern);
+    syncFiltersToUrl(nextConcern, activeBrand);
+  };
+
+  const handleBrandSelect = (nextBrand: string): void => {
+    setActiveBrand(nextBrand);
+    syncFiltersToUrl(activeConcern, nextBrand);
+  };
+
+  const handleClearFilters = (): void => {
+    setActiveConcern("all");
+    setActiveBrand("all");
+    syncFiltersToUrl("all", "all");
+  };
+
   async function refreshCart(): Promise<void> {
     const nextCart = await fetchCart();
     setCart(nextCart);
@@ -720,7 +771,7 @@ export default function ProductsClient({
                     <li key={concern.slug}>
                       <button
                         className={`shop-sidebar__link${activeConcern === concern.slug ? " active" : ""}`}
-                        onClick={() => setActiveConcern(concern.slug)}
+                        onClick={() => handleConcernSelect(concern.slug)}
                       >
                         {concern.label}
                       </button>
@@ -736,7 +787,7 @@ export default function ProductsClient({
                     <li key={brand.slug}>
                       <button
                         className={`shop-sidebar__link${activeBrand === brand.slug ? " active" : ""}`}
-                        onClick={() => setActiveBrand(brand.slug)}
+                        onClick={() => handleBrandSelect(brand.slug)}
                       >
                         {brand.label}
                       </button>
@@ -766,10 +817,7 @@ export default function ProductsClient({
                   <p>No products found for this filter combination.</p>
                   <button
                     className="btn"
-                    onClick={() => {
-                      setActiveConcern("all");
-                      setActiveBrand("all");
-                    }}
+                    onClick={handleClearFilters}
                   >
                     View all products
                   </button>
