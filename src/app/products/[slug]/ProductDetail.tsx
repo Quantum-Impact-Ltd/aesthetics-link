@@ -7,7 +7,11 @@ import Footer from "@/components/Footer";
 import MotionProvider from "@/components/MotionProvider";
 import { getMe, getWholesalePrices } from "@/lib/auth/client";
 import { addCartItem, addVariableCartItem, fetchVariableConfig } from "@/lib/storefront/client";
-import type { StorefrontDetailProduct, StorefrontVariableConfig } from "@/lib/storefront/types";
+import type {
+  StorefrontDetailProduct,
+  StorefrontVariableConfig,
+  StorefrontVariationAttribute,
+} from "@/lib/storefront/types";
 import { useEffect, useMemo, useState } from "react";
 
 function ArrowLongIcon() {
@@ -22,7 +26,83 @@ function ArrowLongIcon() {
 }
 
 function normalizeVariationComparable(value: string): string {
-  return value.trim().toLowerCase();
+  return value
+    .replace(/&amp;/gi, "&")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#039;|&apos;/gi, "'")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&nbsp;/gi, " ")
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase();
+}
+
+function normalizeVariationKey(value: string): string {
+  return normalizeVariationComparable(value)
+    .replace(/^attribute_/, "")
+    .replace(/[^a-z0-9_]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+function toVariationValueToken(value: string): string {
+  return normalizeVariationComparable(value)
+    .replace(/['"]/g, "")
+    .replace(/&/g, " and ")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function variationValuesMatch(leftRaw: string, rightRaw: string): boolean {
+  const left = normalizeVariationComparable(leftRaw);
+  const right = normalizeVariationComparable(rightRaw);
+  if (!left || !right) {
+    return false;
+  }
+
+  if (left === right) {
+    return true;
+  }
+
+  return toVariationValueToken(left) === toVariationValueToken(right);
+}
+
+function variationKeyCandidates(value: string): string[] {
+  const normalized = normalizeVariationKey(value);
+  if (!normalized) {
+    return [];
+  }
+
+  if (normalized.startsWith("pa_")) {
+    return [normalized, normalized.slice(3)];
+  }
+
+  return [normalized, `pa_${normalized}`];
+}
+
+function resolveVariationEntryValue(
+  entryAttributes: Record<string, string>,
+  attribute: StorefrontVariationAttribute,
+): string | null {
+  const wanted = new Set<string>([
+    ...variationKeyCandidates(attribute.id),
+    ...variationKeyCandidates(attribute.apiName),
+    ...variationKeyCandidates(attribute.label),
+  ]);
+
+  for (const [rawKey, rawValue] of Object.entries(entryAttributes)) {
+    if (!rawValue) {
+      continue;
+    }
+
+    const possibleKeys = variationKeyCandidates(rawKey);
+    if (possibleKeys.some((key) => wanted.has(key))) {
+      return rawValue;
+    }
+  }
+
+  return null;
 }
 
 export default function ProductDetail({ product }: { product: StorefrontDetailProduct }) {
@@ -182,15 +262,12 @@ export default function ProductDetail({ product }: { product: StorefrontDetailPr
       variationEntries.find((entry) =>
         variationAttributes.every((attribute) => {
           const selectedValue = variationSelection[attribute.id];
-          const entryValue = entry.attributes[attribute.id];
+          const entryValue = resolveVariationEntryValue(entry.attributes, attribute);
           if (!selectedValue || !entryValue) {
             return false;
           }
 
-          return (
-            normalizeVariationComparable(selectedValue) ===
-            normalizeVariationComparable(entryValue)
-          );
+          return variationValuesMatch(selectedValue, entryValue);
         }),
       ) ?? null
     );
