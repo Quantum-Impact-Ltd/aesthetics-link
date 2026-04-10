@@ -135,21 +135,24 @@ function ProfilePageContent() {
             <div className="profile-grid">
               <article className="profile-card">
                 <p className="profile-card__label superscript">Account Details</p>
-                <h2 className="profile-card__title">
-                  {user.firstName} {user.lastName}
-                </h2>
+                <div className="profile-avatar" aria-hidden="true">
+                  {(user.firstName?.[0] ?? "").toUpperCase()}
+                  {(user.lastName?.[0] ?? "").toUpperCase()}
+                </div>
                 <ul className="profile-meta-list">
                   <li>
                     <span>Email</span>
                     <strong>{user.email}</strong>
                   </li>
-                  <li>
-                    <span>Display Name</span>
-                    <strong>{user.displayName || `${user.firstName} ${user.lastName}`}</strong>
-                  </li>
+                  {user.displayName && user.displayName !== `${user.firstName} ${user.lastName}` ? (
+                    <li>
+                      <span>Public Name</span>
+                      <strong>{user.displayName}</strong>
+                    </li>
+                  ) : null}
                   {user.accountType === "clinic" ? (
                     <li>
-                      <span>Account</span>
+                      <span>Member Type</span>
                       <strong>Business Customer</strong>
                     </li>
                   ) : null}
@@ -158,7 +161,6 @@ function ProfilePageContent() {
 
               <article className="profile-card">
                 <p className="profile-card__label superscript">Quick Actions</p>
-                <h2 className="profile-card__title">What would you like to do?</h2>
                 <div className="profile-actions">
                   <Link href="/products" className="btn">
                     Continue Shopping
@@ -189,9 +191,6 @@ function ProfilePageContent() {
                 <div className="profile-actions">
                   <Link href="/products" className="btn profile-btn-secondary">
                     Browse Products
-                  </Link>
-                  <Link href="/forgot-password" className="btn profile-btn-secondary">
-                    Recover Password
                   </Link>
                 </div>
               </article>
