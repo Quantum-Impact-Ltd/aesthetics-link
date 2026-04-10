@@ -240,7 +240,7 @@ export default async function OrderConfirmedPage({
 
   return (
     <main className="order-receipt-page">
-      <div className="order-receipt-page__frame">
+      <div className="order-receipt-page__frame container">
         {order ? (
           <OrderReceipt order={order} />
         ) : (
