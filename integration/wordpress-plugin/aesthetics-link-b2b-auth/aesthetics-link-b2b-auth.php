@@ -35,6 +35,9 @@ add_action('admin_menu', 'al_b2b_register_admin_menu');
 add_action('admin_init', 'al_b2b_handle_admin_actions');
 add_action('rest_api_init', 'al_b2b_register_routes');
 add_action(AL_B2B_CLEANUP_EVENT, 'al_b2b_cleanup_expired_sessions');
+add_filter('allowed_redirect_hosts', 'al_b2b_allow_frontend_redirect_host');
+add_filter('woocommerce_get_return_url', 'al_b2b_override_return_url', 10, 2);
+add_action('template_redirect', 'al_b2b_lock_checkout_subdomain', 1);
 
 
 function al_b2b_activate() {
@@ -303,6 +306,17 @@ function al_b2b_get_frontend_base_url() {
 	return untrailingslashit(apply_filters('al_b2b_frontend_base_url', $base));
 }
 
+function al_b2b_allow_frontend_redirect_host(array $hosts): array {
+	$frontend_url = al_b2b_get_frontend_base_url();
+	if ($frontend_url) {
+		$parsed = wp_parse_url($frontend_url);
+		if (!empty($parsed['host'])) {
+			$hosts[] = $parsed['host'];
+		}
+	}
+	return $hosts;
+}
+
 function al_b2b_build_frontend_url($path, $query = array()) {
 	$base = al_b2b_get_frontend_base_url();
 	$url = $base . '/' . ltrim((string) $path, '/');
@@ -312,6 +326,45 @@ function al_b2b_build_frontend_url($path, $query = array()) {
 	}
 
 	return $url;
+}
+
+function al_b2b_override_return_url($return_url, $order) {
+	if (!$order) {
+		return al_b2b_build_frontend_url('/');
+	}
+
+	return al_b2b_build_frontend_url('api/checkout/complete', array(
+		'order_id' => $order->get_id(),
+		'key'      => $order->get_order_key(),
+	));
+}
+
+function al_b2b_lock_checkout_subdomain() {
+	// Allow REST API, admin, cron, and login page.
+	if (
+		(defined('REST_REQUEST') && REST_REQUEST) ||
+		(defined('DOING_CRON') && DOING_CRON) ||
+		is_admin()
+	) {
+		return;
+	}
+
+	// Allow WooCommerce checkout and all its endpoints (order-received, payment, etc.).
+	if (function_exists('is_checkout') && is_checkout()) {
+		return;
+	}
+
+	// Allow payment gateway callback pages that WooCommerce marks as checkout.
+	if (function_exists('is_wc_endpoint_url') && is_wc_endpoint_url()) {
+		return;
+	}
+
+	// Redirect everything else (home, shop, product pages, etc.) to the frontend.
+	$frontend_url = al_b2b_get_frontend_base_url();
+	if ($frontend_url) {
+		wp_redirect($frontend_url, 302);
+		exit;
+	}
 }
 
 function al_b2b_hash_token($purpose, $token) {
@@ -595,36 +648,89 @@ function al_b2b_get_user_from_token($token) {
 	return $user;
 }
 
+function al_b2b_decode_cart_token_payload($cart_token) {
+	$cart_token = trim((string) $cart_token);
+	$parts = explode('.', $cart_token);
+	if (count($parts) !== 3) {
+		return null;
+	}
+
+	$b64 = $parts[1];
+	$remainder = strlen($b64) % 4;
+	if ($remainder) {
+		$b64 .= str_repeat('=', 4 - $remainder);
+	}
+
+	$json = base64_decode(strtr($b64, '-_', '+/'));
+	if (!$json) {
+		return null;
+	}
+
+	$payload = json_decode($json, true);
+	return is_array($payload) ? $payload : null;
+}
+
 function al_b2b_fetch_store_cart_by_token($cart_token) {
-	if (!function_exists('rest_get_server')) {
-		return null;
-	}
+	global $wpdb;
 
-	$request = new WP_REST_Request('GET', '/wc/store/v1/cart');
-	$request->set_header('Accept', 'application/json');
-	$request->set_header('Cart-Token', (string) $cart_token);
-	$response = rest_get_server()->dispatch($request);
-
-	if (is_wp_error($response)) {
-		al_b2b_log_checkout_bridge_error('Store cart fetch failed before response dispatch completed.', array(
+	$payload = al_b2b_decode_cart_token_payload($cart_token);
+	if (!$payload || empty($payload['user_id'])) {
+		al_b2b_log_checkout_bridge_error('Cart token payload could not be decoded or is missing user_id.', array(
 			'cart_token_present' => !empty($cart_token),
-			'message' => $response->get_error_message(),
 		));
 		return null;
 	}
 
-	$status = method_exists($response, 'get_status') ? (int) $response->get_status() : 500;
-	if ($status < 200 || $status >= 300) {
-		$data = method_exists($response, 'get_data') ? $response->get_data() : null;
-		al_b2b_log_checkout_bridge_error('Store cart fetch returned a non-success status.', array(
-			'status' => $status,
-			'body' => is_array($data) ? $data : null,
+	$session_key = (string) $payload['user_id'];
+	$sessions_table = $wpdb->prefix . 'woocommerce_sessions';
+
+	$session_value = $wpdb->get_var( // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
+		$wpdb->prepare(
+			"SELECT session_value FROM {$sessions_table} WHERE session_key = %s LIMIT 1",
+			$session_key
+		)
+	);
+
+	if (!$session_value) {
+		al_b2b_log_checkout_bridge_error('No WooCommerce session found for cart token session key.', array(
+			'session_key' => $session_key,
 		));
 		return null;
 	}
 
-	$data = method_exists($response, 'get_data') ? $response->get_data() : null;
-	return is_array($data) ? $data : null;
+	$session_data = maybe_unserialize($session_value);
+	if (!is_array($session_data) || empty($session_data['cart'])) {
+		al_b2b_log_checkout_bridge_error('WooCommerce session has no cart data.', array(
+			'session_key' => $session_key,
+		));
+		return null;
+	}
+
+	$raw_cart = maybe_unserialize($session_data['cart']);
+	if (!is_array($raw_cart) || empty($raw_cart)) {
+		return null;
+	}
+
+	$items = array();
+	foreach ($raw_cart as $cart_item_key => $cart_item) {
+		if (!is_array($cart_item) || empty($cart_item['product_id'])) {
+			continue;
+		}
+
+		$variation_id = isset($cart_item['variation_id']) ? (int) $cart_item['variation_id'] : 0;
+		$product_id   = (int) $cart_item['product_id'];
+		$quantity     = isset($cart_item['quantity']) ? max(1, (int) $cart_item['quantity']) : 1;
+
+		$items[] = array(
+			'id'        => $variation_id > 0 ? $variation_id : $product_id,
+			'quantity'  => $quantity,
+			'type'      => $variation_id > 0 ? 'variation' : 'simple',
+			'key'       => $cart_item_key,
+			'variation' => isset($cart_item['variation']) && is_array($cart_item['variation']) ? $cart_item['variation'] : array(),
+		);
+	}
+
+	return array('items' => $items);
 }
 
 function al_b2b_log_checkout_bridge_error($message, $context = array()) {
