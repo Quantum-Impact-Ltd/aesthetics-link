@@ -6,10 +6,9 @@ import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import MotionProvider from "@/components/MotionProvider";
 import { getMe, getWholesalePrices } from "@/lib/auth/client";
-import { addCartItem, addVariableCartItem, fetchVariableConfig, lookupVariationPrice } from "@/lib/storefront/client";
+import { addCartItem, addVariableCartItem } from "@/lib/storefront/client";
 import type {
   StorefrontDetailProduct,
-  StorefrontVariableConfig,
   StorefrontVariationAttribute,
 } from "@/lib/storefront/types";
 import { useEffect, useMemo, useState } from "react";
@@ -114,14 +113,10 @@ export default function ProductDetail({ product }: { product: StorefrontDetailPr
   const [displayPrice, setDisplayPrice] = useState(product.price);
   const [displayRegularPrice, setDisplayRegularPrice] = useState<string | null>(product.regularPrice ?? null);
   const [isWholesalePrice, setIsWholesalePrice] = useState(false);
-  const [variationConfig, setVariationConfig] = useState<StorefrontVariableConfig | null>(
-    product.variableConfig ?? null,
-  );
+  const variationConfig = product.variableConfig ?? null;
   const [variationSelection, setVariationSelection] = useState<Record<string, string>>(
     product.variableConfig?.defaults ?? {},
   );
-  const [variationLoading, setVariationLoading] = useState(false);
-  const [variationError, setVariationError] = useState<string | null>(null);
   const isVariableProduct = product.hasOptions === true || product.productType === "variable";
   const isOutOfStock = product.inStock === false || product.stockStatus === "outofstock";
   const stockMessage = product.stockMessage || "This product is currently out of stock and unavailable.";
@@ -184,111 +179,12 @@ export default function ProductDetail({ product }: { product: StorefrontDetailPr
     };
   }, [product.price, product.regularPrice, product.wooId]);
 
-  useEffect(() => {
-    let active = true;
-
-    async function loadVariationConfig(): Promise<void> {
-      if (!isVariableProduct || !product.wooId || product.wooId <= 0) {
-        setVariationConfig(null);
-        setVariationSelection({});
-        setVariationError(null);
-        return;
-      }
-
-      if (
-        product.variableConfig?.isVariable &&
-        product.variableConfig.attributes.length > 0 &&
-        product.variableConfig.variations.length > 0
-      ) {
-        setVariationConfig(product.variableConfig);
-        setVariationSelection(product.variableConfig.defaults ?? {});
-        setVariationError(null);
-        return;
-      }
-
-      setVariationLoading(true);
-      setVariationError(null);
-
-      try {
-        const config = await fetchVariableConfig(product.wooId);
-        if (!active) {
-          return;
-        }
-
-        if (!config.isVariable || config.attributes.length === 0) {
-          setVariationConfig(config);
-          setVariationSelection({});
-          setVariationError("Product options are unavailable right now. Please try again in a moment.");
-          return;
-        }
-
-        setVariationConfig(config);
-        setVariationSelection(config.defaults);
-      } catch {
-        if (!active) {
-          return;
-        }
-
-        setVariationConfig(null);
-        setVariationSelection({});
-        setVariationError("Unable to load product options. Please refresh and try again.");
-      } finally {
-        if (active) {
-          setVariationLoading(false);
-        }
-      }
-    }
-
-    void loadVariationConfig();
-
-    return () => {
-      active = false;
-    };
-  }, [isVariableProduct, product.wooId, product.variableConfig]);
 
   const variationAttributes = variationConfig?.attributes ?? [];
   const variationEntries = variationConfig?.variations ?? [];
   const optionsReady = !isVariableProduct || variationAttributes.length > 0;
   const missingSelections = variationAttributes.filter((attribute) => !variationSelection[attribute.id]);
 
-  // Fetch the variation price on-demand whenever the selection changes.
-  // This uses the wc-ajax=get_variation endpoint — WooCommerce's own mechanism —
-  // which is reliable regardless of how the Store API exposes variation data.
-  useEffect(() => {
-    if (!isVariableProduct || !product.wooId || isWholesalePrice) {
-      return;
-    }
-    if (variationAttributes.length === 0 || missingSelections.length > 0) {
-      return;
-    }
-
-    let active = true;
-
-    async function fetchPriceForSelection(): Promise<void> {
-      try {
-        const result = await lookupVariationPrice(
-          product.wooId!,
-          variationAttributes.map((attribute) => ({
-            apiName: attribute.apiName,
-            value: variationSelection[attribute.id] ?? "",
-          })),
-        );
-        if (!active || !result) {
-          return;
-        }
-        setDisplayPrice(result.price);
-        setDisplayRegularPrice(result.regularPrice);
-      } catch {
-        // Keep existing price on error — don't break the page
-      }
-    }
-
-    void fetchPriceForSelection();
-
-    return () => {
-      active = false;
-    };
-  }, [variationSelection, isVariableProduct, product.wooId, isWholesalePrice, variationAttributes, missingSelections.length]);
 
 
   const selectedVariation = useMemo(() => {
@@ -328,7 +224,7 @@ export default function ProductDetail({ product }: { product: StorefrontDetailPr
       : displayRegularPrice;
 
   const handleAddToBag = async () => {
-    if (!product.wooId || adding || isOutOfStock || variationLoading) {
+    if (!product.wooId || adding || isOutOfStock) {
       return;
     }
 
@@ -336,7 +232,7 @@ export default function ProductDetail({ product }: { product: StorefrontDetailPr
       if (!optionsReady) {
         setAddStatus({
           tone: "error",
-          message: variationError || "Product options are not ready yet. Please try again.",
+          message: "Product options are unavailable. Please refresh and try again.",
         });
         return;
       }
@@ -423,7 +319,7 @@ export default function ProductDetail({ product }: { product: StorefrontDetailPr
                           [attribute.id]: event.target.value,
                         }))
                       }
-                      disabled={variationLoading || isOutOfStock}
+                      disabled={isOutOfStock}
                     >
                       <option value="">Select {attribute.label}</option>
                       {attribute.options.map((option) => (
@@ -440,31 +336,16 @@ export default function ProductDetail({ product }: { product: StorefrontDetailPr
               type="button"
               className="btn product-intro__cta"
               onClick={handleAddToBag}
-              disabled={
-                !product.wooId ||
-                adding ||
-                isOutOfStock ||
-                variationLoading ||
-                !canAddWithSelection
-              }
+              disabled={!product.wooId || adding || isOutOfStock || !canAddWithSelection}
             >
-              {isOutOfStock
+              {isOutOfStock || selectedVariationOutOfStock
                 ? "Out of Stock"
-                : selectedVariationOutOfStock
-                  ? "Out of Stock"
-                : variationLoading
-                  ? "Loading options..."
-                  : !canAddWithSelection
-                    ? "Select Options"
-                    : adding
-                      ? "Adding..."
-                      : "Add to Bag"}
+                : !canAddWithSelection
+                  ? "Select Options"
+                  : adding
+                    ? "Adding..."
+                    : "Add to Bag"}
             </button>
-            {variationError ? (
-              <p className="product-intro__status product-intro__status--error" role="status" aria-live="polite">
-                {variationError}
-              </p>
-            ) : null}
             {isOutOfStock ? (
               <p className="product-intro__stock-note" role="status" aria-live="polite">
                 {stockMessage}
