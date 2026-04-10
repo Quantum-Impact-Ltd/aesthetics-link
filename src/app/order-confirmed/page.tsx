@@ -167,10 +167,12 @@ function OrderReceipt({ order }: { order: StorefrontOrderConfirmation }) {
           </div>
         </section>
 
-        <AddressBlock title="Delivery Address" address={shippingAddress} />
-        <AddressBlock title="Billing Address" address={order.billingAddress} />
+        <div className="order-confirmed-sidebar__split">
+          <AddressBlock title="Delivery Address" address={shippingAddress} />
+          <AddressBlock title="Billing Address" address={order.billingAddress} />
+        </div>
 
-        <section className="order-confirmed-card">
+        <section className="order-confirmed-card order-confirmed-card--next-steps">
           <div className="order-confirmed-card__eyebrow">Next Steps</div>
           <ul className="order-confirmed-next-steps">
             <li>A confirmation email has been issued to the billing contact.</li>

@@ -1127,6 +1127,18 @@ function al_b2b_map_order_item_meta($item) {
 	return $meta_entries;
 }
 
+function al_b2b_format_order_money($amount, $currency) {
+	if (!function_exists('wc_price')) {
+		return (string) $amount;
+	}
+
+	$formatted = wc_price((float) $amount, array('currency' => (string) $currency));
+	$formatted = wp_strip_all_tags($formatted);
+	$formatted = html_entity_decode($formatted, ENT_QUOTES, 'UTF-8');
+
+	return trim((string) $formatted);
+}
+
 function al_b2b_map_order_line_item($item) {
 	if (!$item || !is_a($item, 'WC_Order_Item_Product')) {
 		return null;
@@ -1154,8 +1166,8 @@ function al_b2b_map_order_line_item($item) {
 		'variationId' => method_exists($item, 'get_variation_id') ? (int) $item->get_variation_id() : 0,
 		'name' => (string) $item->get_name(),
 		'quantity' => $quantity,
-		'unitPrice' => function_exists('wc_price') ? wp_strip_all_tags(wc_price($unit_price, array('currency' => $currency))) : (string) $unit_price,
-		'lineTotal' => function_exists('wc_price') ? wp_strip_all_tags(wc_price($total, array('currency' => $currency))) : (string) $total,
+		'unitPrice' => al_b2b_format_order_money($unit_price, $currency),
+		'lineTotal' => al_b2b_format_order_money($total, $currency),
 		'image' => $image,
 		'sku' => $product && method_exists($product, 'get_sku') ? (string) $product->get_sku() : '',
 		'meta' => al_b2b_map_order_item_meta($item),
@@ -1194,10 +1206,10 @@ function al_b2b_get_order_confirmation($request) {
 	}
 
 	$totals = array(
-		'subtotal' => wp_strip_all_tags(wc_price((float) $order->get_subtotal(), array('currency' => $currency))),
-		'shipping' => wp_strip_all_tags(wc_price((float) $order->get_shipping_total(), array('currency' => $currency))),
-		'tax' => wp_strip_all_tags(wc_price((float) $order->get_total_tax(), array('currency' => $currency))),
-		'total' => wp_strip_all_tags(wc_price((float) $order->get_total(), array('currency' => $currency))),
+		'subtotal' => al_b2b_format_order_money($order->get_subtotal(), $currency),
+		'shipping' => al_b2b_format_order_money($order->get_shipping_total(), $currency),
+		'tax' => al_b2b_format_order_money($order->get_total_tax(), $currency),
+		'total' => al_b2b_format_order_money($order->get_total(), $currency),
 	);
 
 	return rest_ensure_response(array(
