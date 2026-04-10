@@ -16,3 +16,18 @@ export function getWooStoreBaseUrl(): string | null {
 export function isWooStoreConfigured(): boolean {
   return getWooStoreBaseUrl() !== null;
 }
+
+export function getGraphQLUrl(): string | null {
+  const raw = process.env.WORDPRESS_GRAPHQL_URL?.trim();
+
+  if (!raw) {
+    return null;
+  }
+
+  try {
+    const url = new URL(raw);
+    return url.toString().replace(/\/$/, "");
+  } catch {
+    return null;
+  }
+}
