@@ -332,6 +332,13 @@ export default function ProductsClient({
       .replace(/^-+|-+$/g, "");
   };
 
+  const toFilterLabel = (slug: string): string =>
+    slug
+      .split("-")
+      .filter(Boolean)
+      .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
+      .join(" ");
+
   const extractNavFilterOptions = useMemo(() => {
     return (
       links: Array<{ href: string; label: string }>,
@@ -373,6 +380,11 @@ export default function ProductsClient({
     return extractNavFilterOptions(links, "brand");
   }, [navigation, extractNavFilterOptions]);
 
+  const knownBrandSlugs = useMemo(
+    () => Array.from(new Set(brandFilters.map((brand) => normalizeFilterSlug(brand.slug)).filter(Boolean))),
+    [brandFilters],
+  );
+
   const productCategoryIndex = useMemo(() => {
     return products.map((product) => {
       const allSlugs = Array.from(
@@ -392,20 +404,34 @@ export default function ProductsClient({
 
   const productBrandIndex = useMemo(() => {
     return products.map((product) => {
-      const allSlugs = Array.from(
-        new Set(
-          [product.brandSlug, ...(product.brandSlugs ?? [])]
-            .map((slug) => normalizeFilterSlug(slug))
-            .filter(Boolean),
-        ),
-      );
+      const explicitSlugs = [product.brandSlug, ...(product.brandSlugs ?? [])]
+        .map((slug) => normalizeFilterSlug(slug))
+        .filter(Boolean);
+      const categorySlugs = [product.categorySlug, ...product.categorySlugs]
+        .map((slug) => normalizeFilterSlug(slug))
+        .filter(Boolean);
+      const productSlug = normalizeFilterSlug(product.slug);
+      const productNameSlug = normalizeFilterSlug(product.name);
+
+      const inferredSlugs = knownBrandSlugs.filter((brandSlug) => {
+        if (categorySlugs.includes(brandSlug)) {
+          return true;
+        }
+        if (productSlug === brandSlug || productSlug.startsWith(`${brandSlug}-`)) {
+          return true;
+        }
+        if (productNameSlug === brandSlug || productNameSlug.startsWith(`${brandSlug}-`)) {
+          return true;
+        }
+        return false;
+      });
 
       return {
         product,
-        allSlugs,
+        allSlugs: Array.from(new Set([...explicitSlugs, ...inferredSlugs])),
       };
     });
-  }, [products]);
+  }, [products, knownBrandSlugs]);
 
   const concernBuckets = useMemo(() => {
     const buckets = new Map<string, StorefrontCatalogProduct[]>();
@@ -436,20 +462,36 @@ export default function ProductsClient({
   }, [productBrandIndex]);
 
   const concernOptions = useMemo(() => {
-    if (concernFilters.length === 0) {
-      return [{ slug: "all", label: "All" }];
+    const baseOptions =
+      concernFilters.length === 0 ? [{ slug: "all", label: "All" }] : [{ slug: "all", label: "All" }, ...concernFilters];
+    const normalizedActive = normalizeFilterSlug(activeConcern);
+
+    if (!normalizedActive || normalizedActive === "all") {
+      return baseOptions;
     }
 
-    return [{ slug: "all", label: "All" }, ...concernFilters];
-  }, [concernFilters]);
+    if (baseOptions.some((option) => option.slug === normalizedActive)) {
+      return baseOptions;
+    }
+
+    return [{ slug: normalizedActive, label: toFilterLabel(normalizedActive) || normalizedActive }, ...baseOptions];
+  }, [concernFilters, activeConcern]);
 
   const brandOptions = useMemo(() => {
-    if (brandFilters.length === 0) {
-      return [{ slug: "all", label: "All" }];
+    const baseOptions =
+      brandFilters.length === 0 ? [{ slug: "all", label: "All" }] : [{ slug: "all", label: "All" }, ...brandFilters];
+    const normalizedActive = normalizeFilterSlug(activeBrand);
+
+    if (!normalizedActive || normalizedActive === "all") {
+      return baseOptions;
     }
 
-    return [{ slug: "all", label: "All" }, ...brandFilters];
-  }, [brandFilters]);
+    if (baseOptions.some((option) => option.slug === normalizedActive)) {
+      return baseOptions;
+    }
+
+    return [{ slug: normalizedActive, label: toFilterLabel(normalizedActive) || normalizedActive }, ...baseOptions];
+  }, [brandFilters, activeBrand]);
 
   useEffect(() => {
     void refreshCart();
@@ -557,18 +599,6 @@ export default function ProductsClient({
       active = false;
     };
   }, [initialProducts]);
-
-  useEffect(() => {
-    if (!concernOptions.some((option) => option.slug === activeConcern)) {
-      setActiveConcern("all");
-    }
-  }, [concernOptions, activeConcern]);
-
-  useEffect(() => {
-    if (!brandOptions.some((option) => option.slug === activeBrand)) {
-      setActiveBrand("all");
-    }
-  }, [brandOptions, activeBrand]);
 
   const normalizedActiveConcern = normalizeFilterSlug(activeConcern);
   const normalizedActiveBrand = normalizeFilterSlug(activeBrand);

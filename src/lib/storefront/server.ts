@@ -744,13 +744,15 @@ export async function getCatalogProducts(options?: {
 
     // Client-side brand filter — GraphQL taxonomy filters vary by plugin setup.
     if (options?.brand) {
-      const brandSlug = options.brand.toLowerCase();
-      const filtered = mapped.filter(
+      const brandSlug = slugify(options.brand);
+      if (!brandSlug) {
+        return [];
+      }
+      return mapped.filter(
         (product) =>
           product.brandSlug === brandSlug ||
           (product.brandSlugs ?? []).some((s) => s === brandSlug),
       );
-      return filtered.length > 0 ? filtered : mapped;
     }
 
     return mapped;

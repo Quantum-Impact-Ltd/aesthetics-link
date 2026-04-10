@@ -72,27 +72,8 @@ export default async function ProductsPage({ searchParams }: Props) {
           });
   }
 
-  const initialConcern =
-    concernFilter &&
-    catalog.some((product) => {
-      const allSlugs = [product.categorySlug, ...product.categorySlugs]
-        .map((slug) => normalizeSlug(slug))
-        .filter((slug): slug is string => Boolean(slug));
-      return allSlugs.includes(concernFilter);
-    })
-      ? concernFilter
-      : "all";
-
-  const initialBrand =
-    brandFilter &&
-    catalog.some((product) => {
-      const allSlugs = [product.brandSlug, ...(product.brandSlugs ?? [])]
-        .map((slug) => normalizeSlug(slug))
-        .filter((slug): slug is string => Boolean(slug));
-      return allSlugs.includes(brandFilter);
-    })
-      ? brandFilter
-      : "all";
+  const initialConcern = concernFilter ?? "all";
+  const initialBrand = brandFilter ?? "all";
 
   return (
     <ProductsClient
