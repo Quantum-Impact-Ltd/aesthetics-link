@@ -692,7 +692,30 @@ export async function fetchVariableConfig(productId: number): Promise<Storefront
 
   const attributes = parseVariationAttributes(product);
   const defaults = parseVariationDefaults(product, attributes);
-  const variations = parseVariationEntries(product);
+
+  // The Store API returns variations as an array of IDs, not full objects.
+  // Detect this case and fetch each variation individually to get prices.
+  const variationsRaw = Array.isArray(product.variations) ? product.variations : [];
+  const variationIds = variationsRaw.filter((v): v is number => typeof v === "number");
+
+  let variations: StorefrontVariableConfig["variations"];
+  if (variationIds.length > 0) {
+    const fetched = await Promise.all(
+      variationIds.map(async (id) => {
+        try {
+          const data = await requestStoreApi<unknown>(`/products/${id}`);
+          return asRecord(data);
+        } catch {
+          return null;
+        }
+      }),
+    );
+    variations = fetched
+      .filter((v): v is Record<string, unknown> => v !== null)
+      .flatMap((v) => parseVariationEntries({ variations: [v] }));
+  } else {
+    variations = parseVariationEntries(product);
+  }
 
   return {
     isVariable: true,

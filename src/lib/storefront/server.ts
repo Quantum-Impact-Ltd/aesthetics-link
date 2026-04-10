@@ -1205,6 +1205,29 @@ export async function getCatalogProducts(options?: {
   }
 }
 
+async function fetchWooVariationById(variationId: number): Promise<UnknownRecord | null> {
+  const baseUrl = getWooStoreBaseUrl();
+  if (!baseUrl || variationId <= 0) {
+    return null;
+  }
+
+  const url = new URL(`/wp-json/wc/store/v1/products/${variationId}`, baseUrl);
+  const response = await fetch(url.toString(), {
+    headers: { Accept: "application/json" },
+    next: {
+      revalidate: 300,
+      tags: ["woo:products", `woo:product-id:${variationId}`],
+    },
+  });
+
+  if (!response.ok) {
+    return null;
+  }
+
+  const data = (await response.json()) as unknown;
+  return asRecord(data);
+}
+
 export async function getDetailProductBySlug(slug: string): Promise<StorefrontDetailProduct | null> {
   try {
     const data = await fetchWooProducts({ slug });
@@ -1222,6 +1245,24 @@ export async function getDetailProductBySlug(slug: string): Promise<StorefrontDe
       const productDetail = await fetchWooProductById(product.id, product.slug);
       if (productDetail) {
         variableConfig = extractVariableConfig(productDetail);
+
+        // The Store API returns variations as IDs, not full objects.
+        // Fetch each variation in parallel to get per-variation prices and stock.
+        if (variableConfig && variableConfig.variations.length === 0) {
+          const variationIds = (Array.isArray(productDetail.variations) ? productDetail.variations : [])
+            .filter((v): v is number => typeof v === "number");
+
+          if (variationIds.length > 0) {
+            const fetched = await Promise.all(variationIds.map(fetchWooVariationById));
+            const parsedVariations = fetched
+              .filter((v): v is UnknownRecord => v !== null)
+              .flatMap((v) => parseVariationEntries({ variations: [v] }));
+
+            if (parsedVariations.length > 0) {
+              variableConfig = { ...variableConfig, variations: parsedVariations };
+            }
+          }
+        }
       }
     }
 

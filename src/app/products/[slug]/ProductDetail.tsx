@@ -197,7 +197,8 @@ export default function ProductDetail({ product }: { product: StorefrontDetailPr
 
       if (
         product.variableConfig?.isVariable &&
-        product.variableConfig.attributes.length > 0
+        product.variableConfig.attributes.length > 0 &&
+        product.variableConfig.variations.length > 0
       ) {
         setVariationConfig(product.variableConfig);
         setVariationSelection(product.variableConfig.defaults ?? {});
