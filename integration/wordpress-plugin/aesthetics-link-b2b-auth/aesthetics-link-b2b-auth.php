@@ -35,8 +35,7 @@ add_action('admin_menu', 'al_b2b_register_admin_menu');
 add_action('admin_init', 'al_b2b_handle_admin_actions');
 add_action('rest_api_init', 'al_b2b_register_routes');
 add_action(AL_B2B_CLEANUP_EVENT, 'al_b2b_cleanup_expired_sessions');
-add_action('wp_ajax_al_b2b_checkout_bridge', 'al_b2b_maybe_handle_checkout_bridge');
-add_action('wp_ajax_nopriv_al_b2b_checkout_bridge', 'al_b2b_maybe_handle_checkout_bridge');
+
 
 function al_b2b_activate() {
 	al_b2b_ensure_roles();
@@ -892,6 +891,55 @@ function al_b2b_maybe_handle_checkout_bridge() {
 	}
 }
 
+function al_b2b_rest_checkout_bridge(WP_REST_Request $request) {
+	$encoded_payload = trim((string) ($request->get_param('al_b2b_checkout_bridge') ?? ''));
+	$signature = trim((string) ($request->get_param('sig') ?? ''));
+	$checkout_url = function_exists('wc_get_checkout_url') ? wc_get_checkout_url() : home_url('/checkout');
+
+	if (!$encoded_payload || !$signature) {
+		wp_safe_redirect(al_b2b_get_checkout_bridge_failure_url('bridge_invalid'));
+		exit;
+	}
+
+	try {
+		$payload = al_b2b_parse_checkout_bridge_payload($encoded_payload, $signature);
+
+		if (!$payload || !isset($payload['cartToken'])) {
+			wp_safe_redirect(al_b2b_get_checkout_bridge_failure_url('bridge_invalid'));
+			exit;
+		}
+
+		$bridge_user_id = isset($payload['userId']) ? (int) $payload['userId'] : 0;
+
+		$sync_result = al_b2b_sync_wc_cart_from_store_token($payload['cartToken'], $bridge_user_id);
+		if (empty($sync_result['ok'])) {
+			al_b2b_log_checkout_bridge_error('REST bridge cart sync did not complete successfully.', array(
+				'error_code' => isset($sync_result['error_code']) ? $sync_result['error_code'] : 'bridge_sync_failed',
+			));
+			wp_safe_redirect(al_b2b_get_checkout_bridge_failure_url(
+				isset($sync_result['error_code']) ? $sync_result['error_code'] : 'bridge_sync_failed'
+			));
+			exit;
+		}
+
+		if ($bridge_user_id > 0) {
+			wp_set_current_user($bridge_user_id);
+			wp_set_auth_cookie($bridge_user_id, true);
+		}
+
+		wp_safe_redirect($checkout_url);
+		exit;
+	} catch (Throwable $error) {
+		al_b2b_log_checkout_bridge_error('REST checkout bridge crashed.', array(
+			'message' => $error->getMessage(),
+			'file' => $error->getFile(),
+			'line' => $error->getLine(),
+		));
+		wp_safe_redirect(al_b2b_get_checkout_bridge_failure_url('bridge_crashed'));
+		exit;
+	}
+}
+
 function al_b2b_is_wholesale_approved_user($user) {
 	if (!$user || !isset($user->ID)) {
 		return false;
@@ -1253,6 +1301,12 @@ function al_b2b_register_routes() {
 	register_rest_route('aesthetics-link/v1', '/auth/wholesale-prices', array(
 		'methods' => 'GET',
 		'callback' => 'al_b2b_get_wholesale_prices',
+		'permission_callback' => '__return_true',
+	));
+
+	register_rest_route('aesthetics-link/v1', '/checkout/bridge', array(
+		'methods' => 'GET',
+		'callback' => 'al_b2b_rest_checkout_bridge',
 		'permission_callback' => '__return_true',
 	));
 }
