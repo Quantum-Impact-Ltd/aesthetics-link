@@ -168,14 +168,31 @@ function parseVariationEntryAttributes(rawAttributes: unknown): Record<string, s
         continue;
       }
 
+      // Prefer taxonomy (e.g. "pa_color") over name (e.g. "Color") as the key so it
+      // matches the parent product attribute id without extra normalisation.
       const keyRaw =
         (typeof attribute.attribute === "string" && attribute.attribute.trim()) ||
+        (typeof attribute.taxonomy === "string" && attribute.taxonomy.trim()) ||
         (typeof attribute.name === "string" && attribute.name.trim()) ||
         "";
-      const valueRaw =
+
+      let valueRaw =
         (typeof attribute.value === "string" && attribute.value.trim()) ||
         (typeof attribute.option === "string" && attribute.option.trim()) ||
         "";
+
+      // Store API returns variation attributes as { terms: [{ slug, name }] } with no
+      // value/option field. When there is exactly one term it is the selected value for
+      // this variation.
+      if (!valueRaw && Array.isArray(attribute.terms) && attribute.terms.length === 1) {
+        const term = asRecord(attribute.terms[0]);
+        if (term) {
+          valueRaw =
+            (typeof term.slug === "string" && term.slug.trim()) ||
+            (typeof term.name === "string" && term.name.trim()) ||
+            "";
+        }
+      }
 
       if (!keyRaw || !valueRaw) {
         continue;
