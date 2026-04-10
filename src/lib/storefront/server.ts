@@ -38,6 +38,12 @@ type WooCategory = {
   count?: number;
 };
 
+type WooStoreProduct = {
+  id: number;
+  slug: string;
+  brands: WooProductBrand[];
+};
+
 // ── Constants ──────────────────────────────────────────────────────────────
 
 const ACCENT_COLORS = ["#F1CCCF", "#D8D0C4", "#D3E5EF", "#E8DFC8"];
@@ -485,6 +491,97 @@ function normalizeWooTerms(input: unknown): WooProductBrand[] {
   return Array.from(deduped.values());
 }
 
+function normalizeWooStoreProduct(input: unknown): WooStoreProduct | null {
+  const product = asRecord(input);
+  if (!product) {
+    return null;
+  }
+
+  const numericId =
+    typeof product.id === "number"
+      ? product.id
+      : typeof product.id === "string" && Number.isFinite(Number(product.id))
+        ? Number(product.id)
+        : 0;
+  const slug = typeof product.slug === "string" ? slugify(product.slug) : "";
+  const brands = normalizeWooTerms(product.brands);
+
+  if (!numericId || !slug) {
+    return null;
+  }
+
+  return { id: numericId, slug, brands };
+}
+
+type WooProductBrandLookup = {
+  byId: Map<number, WooProductBrand[]>;
+  bySlug: Map<string, WooProductBrand[]>;
+};
+
+function toWooProductBrandLookup(input: unknown): WooProductBrandLookup | null {
+  if (!Array.isArray(input)) {
+    return null;
+  }
+
+  const byId = new Map<number, WooProductBrand[]>();
+  const bySlug = new Map<string, WooProductBrand[]>();
+
+  for (const item of input) {
+    const product = normalizeWooStoreProduct(item);
+    if (!product || product.brands.length === 0) {
+      continue;
+    }
+
+    byId.set(product.id, product.brands);
+    bySlug.set(product.slug, product.brands);
+  }
+
+  return { byId, bySlug };
+}
+
+function mergeCatalogBrandsFromWooLookup(
+  catalog: StorefrontCatalogProduct[],
+  lookup: WooProductBrandLookup,
+): StorefrontCatalogProduct[] {
+  return catalog.map((product) => {
+    const storeBrands = lookup.byId.get(product.id) ?? lookup.bySlug.get(slugify(product.slug)) ?? [];
+    if (storeBrands.length === 0) {
+      return product;
+    }
+
+    const normalizedStoreBrands = storeBrands
+      .map((brand) => {
+        const slug = slugify(brand.slug ?? brand.name ?? "");
+        const name = typeof brand.name === "string" ? normalizeWhitespace(decodeEntities(brand.name)) : "";
+        if (!slug) {
+          return null;
+        }
+        return { slug, name: name || slug };
+      })
+      .filter((brand): brand is { slug: string; name: string } => Boolean(brand));
+
+    if (normalizedStoreBrands.length === 0) {
+      return product;
+    }
+
+    const primaryBrand = normalizedStoreBrands[0];
+    const brandSlugs = Array.from(
+      new Set([
+        primaryBrand.slug,
+        ...normalizedStoreBrands.map((brand) => brand.slug),
+        ...(product.brandSlugs ?? []).map((slug) => slugify(slug)).filter(Boolean),
+      ]),
+    );
+
+    return {
+      ...product,
+      brand: primaryBrand.name,
+      brandSlug: primaryBrand.slug,
+      brandSlugs,
+    };
+  });
+}
+
 function buildFilterHref(key: "concern" | "brand", slug: string): string {
   return `/products?${key}=${encodeURIComponent(slug)}`;
 }
@@ -657,6 +754,35 @@ async function fetchWooBrands(): Promise<WooProductBrand[] | null> {
   return normalizeWooTerms(payload);
 }
 
+async function fetchWooProductBrandLookup(): Promise<WooProductBrandLookup | null> {
+  const baseUrl = getWooStoreBaseUrl();
+  if (!baseUrl) {
+    return null;
+  }
+
+  const url = new URL("/wp-json/wc/store/v1/products", baseUrl);
+  url.searchParams.set("per_page", "100");
+  url.searchParams.set("page", "1");
+  url.searchParams.set("hide_empty", "false");
+  url.searchParams.set("_fields", "id,slug,brands");
+
+  const response = await fetch(url.toString(), {
+    headers: { Accept: "application/json" },
+    next: { revalidate: 300, tags: ["woo:products", "woo:brands"] },
+  });
+
+  if (response.status === 404) {
+    return null;
+  }
+
+  if (!response.ok) {
+    throw new Error(`Woo product brand request failed (${response.status})`);
+  }
+
+  const payload = await response.json();
+  return toWooProductBrandLookup(payload);
+}
+
 export async function getStorefrontNavigation(): Promise<StorefrontNavigation> {
   try {
     const [categories, storeBrands] = await Promise.all([fetchWooCategories(), fetchWooBrands()]);
@@ -741,6 +867,16 @@ export async function getCatalogProducts(options?: {
     }
 
     const mapped = nodes.map(mapGQLToCatalogProduct);
+    let catalog = mapped;
+
+    try {
+      const wooBrandLookup = await fetchWooProductBrandLookup();
+      if (wooBrandLookup) {
+        catalog = mergeCatalogBrandsFromWooLookup(mapped, wooBrandLookup);
+      }
+    } catch (lookupError) {
+      console.warn("[GraphQL] brand enrichment skipped:", lookupError);
+    }
 
     // Client-side brand filter — GraphQL taxonomy filters vary by plugin setup.
     if (options?.brand) {
@@ -748,14 +884,14 @@ export async function getCatalogProducts(options?: {
       if (!brandSlug) {
         return [];
       }
-      return mapped.filter(
+      return catalog.filter(
         (product) =>
           product.brandSlug === brandSlug ||
           (product.brandSlugs ?? []).some((s) => s === brandSlug),
       );
     }
 
-    return mapped;
+    return catalog;
   } catch (err) {
     console.error("[GraphQL] getCatalogProducts failed:", err);
     return toCatalogFallback();
