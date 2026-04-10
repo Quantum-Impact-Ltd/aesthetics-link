@@ -5941,6 +5941,177 @@ h5,
 }
 
 /* ================================================================
+   PROFILE PAGE
+   ================================================================ */
+
+.profile-page {
+  background: #f8f7f5;
+  min-height: 100vh;
+}
+
+.profile-main {
+  padding-top: 9.5rem;
+  padding-bottom: 6rem;
+}
+
+.profile-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.profile-heading {
+  max-width: 42rem;
+}
+
+.profile-heading__title {
+  font-family: "PP Mori", sans-serif;
+  font-size: clamp(2.2rem, 4vw, 3.6rem);
+  font-weight: 500;
+  letter-spacing: -0.03em;
+  margin-top: 0.5rem;
+}
+
+.profile-heading__subtitle {
+  color: var(--color-gray2);
+  margin-top: 0.7rem;
+}
+
+.profile-loading {
+  color: var(--color-gray2);
+  font-size: 0.95rem;
+}
+
+.profile-loading--shell {
+  text-align: center;
+}
+
+.profile-banner {
+  background: #fff;
+  border: 1px solid #e6e3de;
+  border-radius: 12px;
+  color: var(--color-text);
+  font-size: 0.9rem;
+  padding: 0.95rem 1rem;
+}
+
+.profile-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+@media (max-width: 991.98px) {
+  .profile-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.profile-card {
+  background: #fff;
+  border: 1px solid #e6e3de;
+  border-radius: 16px;
+  padding: 1.3rem 1.25rem 1.35rem;
+}
+
+.profile-card--auth {
+  max-width: 32rem;
+}
+
+.profile-card__label {
+  color: var(--color-gray2);
+}
+
+.profile-card__title {
+  font-family: "PP Mori", sans-serif;
+  font-size: clamp(1.2rem, 1.5vw, 1.45rem);
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  margin-top: 0.45rem;
+}
+
+.profile-card__copy {
+  color: var(--color-gray2);
+  font-size: 0.92rem;
+  margin-top: 0.65rem;
+  max-width: 48ch;
+}
+
+.profile-meta-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  margin-top: 1rem;
+}
+
+.profile-meta-list li {
+  align-items: baseline;
+  border-top: 1px solid #efefef;
+  display: flex;
+  font-size: 0.9rem;
+  gap: 1rem;
+  justify-content: space-between;
+  padding-top: 0.65rem;
+}
+
+.profile-meta-list li span {
+  color: var(--color-gray2);
+}
+
+.profile-meta-list li strong {
+  color: var(--color-text);
+  font-weight: 500;
+  text-align: right;
+}
+
+.profile-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-top: 1rem;
+}
+
+.profile-btn-secondary {
+  background: transparent;
+}
+
+.profile-card--clinic.profile-card--approved {
+  border-color: #cfdfd4;
+  background: #f5fbf7;
+}
+
+.profile-card--clinic.profile-card--pending {
+  border-color: #e9dbc0;
+  background: #fffaf0;
+}
+
+.profile-card--clinic.profile-card--rejected {
+  border-color: #e9cece;
+  background: #fff7f7;
+}
+
+.profile-clinic-status {
+  margin-top: 0.55rem;
+}
+
+@media (max-width: 767.98px) {
+  .profile-main {
+    padding-top: 8.25rem;
+    padding-bottom: 4rem;
+  }
+
+  .profile-card {
+    border-radius: 12px;
+    padding: 1rem;
+  }
+
+  .profile-actions .btn {
+    width: 100%;
+    text-align: center;
+  }
+}
+
+/* ================================================================
    ABOUT US PAGE
    ================================================================ */
 

@@ -12,7 +12,15 @@ import type { AuthUser } from "@/lib/auth/types";
 
 export default function ProfilePage() {
   return (
-    <Suspense fallback={<div className="auth-page shop-page" style={{ paddingTop: "8rem", textAlign: "center" }}>Loading...</div>}>
+    <Suspense
+      fallback={
+        <div className="auth-page shop-page profile-page">
+          <main className="container profile-main">
+            <p className="profile-loading profile-loading--shell">Loading profile...</p>
+          </main>
+        </div>
+      }
+    >
       <ProfilePageContent />
     </Suspense>
   );
@@ -63,58 +71,60 @@ function ProfilePageContent() {
     }
   }
 
+  const clinicStatus = user?.clinicStatus ?? "pending";
+  const clinicStatusTone =
+    clinicStatus === "approved"
+      ? "approved"
+      : clinicStatus === "rejected"
+        ? "rejected"
+        : "pending";
+  const clinicStatusMessage =
+    clinicStatus === "approved"
+      ? "Your business account is approved and wholesale pricing is active."
+      : clinicStatus === "rejected"
+        ? "Your business application was not approved. Contact support if you want it reviewed."
+        : "Your business application is in review. Retail shopping remains available meanwhile.";
+
   return (
-    <div className="auth-page shop-page">
+    <div className="auth-page shop-page profile-page">
       <MotionProvider />
       <Header />
 
-      <main className="container" style={{ paddingTop: "11rem", paddingBottom: "6rem" }}>
-        <div style={{ maxWidth: "760px", margin: "0 auto" }}>
-          <h1 style={{ fontSize: "2.5rem", marginBottom: "0.5rem" }}>My Profile</h1>
+      <main className="container profile-main">
+        <div className="profile-shell">
+          <div className="profile-heading">
+            <p className="superscript profile-heading__eyebrow">Account</p>
+            <h1 className="profile-heading__title">
+              {user ? `Welcome back, ${user.firstName || "Customer"}` : "My Profile"}
+            </h1>
+            <p className="profile-heading__subtitle">
+              Manage your account and continue your shopping journey.
+            </p>
+          </div>
 
-          {loading ? <p style={{ color: "var(--color-gray2)" }}>Loading profile...</p> : null}
+          {loading ? <p className="profile-loading">Loading profile...</p> : null}
 
           {!loading && state === "signup-success" ? (
-            <div
-              style={{
-                marginTop: "1rem",
-                border: "1px solid rgba(0,0,0,0.08)",
-                padding: "0.9rem 1rem",
-                borderRadius: "12px",
-                color: "var(--color-gray2)",
-                fontSize: "0.85rem",
-              }}
-            >
-              Account created successfully. You can continue shopping or proceed to checkout.
+            <div className="profile-banner">
+              Account created successfully. You can continue shopping whenever you are ready.
             </div>
           ) : null}
 
           {!loading && state === "clinic-pending" ? (
-            <div
-              style={{
-                marginTop: "1rem",
-                border: "1px solid rgba(0,0,0,0.08)",
-                padding: "0.9rem 1rem",
-                borderRadius: "12px",
-                color: "var(--color-gray2)",
-                fontSize: "0.85rem",
-              }}
-            >
-              Clinic application submitted. Status is pending admin review. You can keep using your account while
-              approval is in progress.
+            <div className="profile-banner">
+              Business application received. We will notify you after review.
             </div>
           ) : null}
 
           {!loading && !user ? (
-            <div style={{ marginTop: "2rem", border: "1px solid rgba(0,0,0,0.08)", padding: "1.5rem", borderRadius: "12px" }}>
-              <p style={{ marginBottom: "1rem" }}>
-                {error ?? "You are not logged in."}
-              </p>
-              <div style={{ display: "flex", gap: "0.75rem" }}>
+            <div className="profile-card profile-card--auth">
+              <h2 className="profile-card__title">Sign in to access your profile</h2>
+              <p>{error ?? "You are not logged in."}</p>
+              <div className="profile-actions">
                 <Link href="/login" className="btn">
                   Log in
                 </Link>
-                <Link href="/signup" className="btn" style={{ background: "transparent", color: "var(--color-text)" }}>
+                <Link href="/signup" className="btn profile-btn-secondary">
                   Create account
                 </Link>
               </div>
@@ -122,79 +132,88 @@ function ProfilePageContent() {
           ) : null}
 
           {user ? (
-            <div style={{ marginTop: "1.5rem", display: "grid", gap: "1rem" }}>
-              <div style={{ border: "1px solid rgba(0,0,0,0.08)", padding: "1.25rem", borderRadius: "12px" }}>
-                <p style={{ fontSize: "0.8rem", letterSpacing: "0.08em", textTransform: "uppercase", opacity: 0.65 }}>
-                  Account
-                </p>
-                <h2 style={{ marginTop: "0.4rem" }}>
+            <div className="profile-grid">
+              <article className="profile-card">
+                <p className="profile-card__label superscript">Account Details</p>
+                <h2 className="profile-card__title">
                   {user.firstName} {user.lastName}
                 </h2>
-                <p style={{ marginTop: "0.3rem", color: "var(--color-gray2)" }}>{user.email}</p>
-                <p style={{ marginTop: "0.6rem", color: "var(--color-gray2)" }}>
-                  Type: <strong>{user.accountType === "clinic" ? "Clinic / B2B" : "Retail"}</strong>
+                <ul className="profile-meta-list">
+                  <li>
+                    <span>Email</span>
+                    <strong>{user.email}</strong>
+                  </li>
+                  <li>
+                    <span>Display Name</span>
+                    <strong>{user.displayName || `${user.firstName} ${user.lastName}`}</strong>
+                  </li>
+                  {user.accountType === "clinic" ? (
+                    <li>
+                      <span>Account</span>
+                      <strong>Business Customer</strong>
+                    </li>
+                  ) : null}
+                </ul>
+              </article>
+
+              <article className="profile-card">
+                <p className="profile-card__label superscript">Quick Actions</p>
+                <h2 className="profile-card__title">What would you like to do?</h2>
+                <div className="profile-actions">
+                  <Link href="/products" className="btn">
+                    Continue Shopping
+                  </Link>
+                  <Link href="/cart" className="btn profile-btn-secondary">
+                    View Bag
+                  </Link>
+                  <Link href="/forgot-password" className="btn profile-btn-secondary">
+                    Reset Password
+                  </Link>
+                  <button
+                    type="button"
+                    className="btn profile-btn-secondary"
+                    onClick={() => void handleLogout()}
+                    disabled={logoutBusy}
+                  >
+                    {logoutBusy ? "Signing out..." : "Log out"}
+                  </button>
+                </div>
+              </article>
+
+              <article className="profile-card">
+                <p className="profile-card__label superscript">Support</p>
+                <h2 className="profile-card__title">Need help with your account?</h2>
+                <p className="profile-card__copy">
+                  For order updates, returns, or account support, contact our team and we will help you quickly.
                 </p>
-                <p style={{ marginTop: "0.2rem", color: "var(--color-gray2)" }}>
-                  Role: <strong>{user.role}</strong>
-                </p>
-                <p style={{ marginTop: "0.2rem", color: "var(--color-gray2)" }}>
-                  Email Verified: <strong>{user.emailVerified ? "Yes" : "No"}</strong>
-                </p>
-              </div>
+                <div className="profile-actions">
+                  <Link href="/products" className="btn profile-btn-secondary">
+                    Browse Products
+                  </Link>
+                  <Link href="/forgot-password" className="btn profile-btn-secondary">
+                    Recover Password
+                  </Link>
+                </div>
+              </article>
 
               {user.accountType === "clinic" ? (
-                <div style={{ border: "1px solid rgba(0,0,0,0.08)", padding: "1.25rem", borderRadius: "12px" }}>
-                  <p style={{ fontSize: "0.8rem", letterSpacing: "0.08em", textTransform: "uppercase", opacity: 0.65 }}>
-                    Clinic Status
-                  </p>
-                  <h3 style={{ marginTop: "0.4rem", textTransform: "capitalize" }}>
-                    {user.clinicStatus ?? "pending"}
-                  </h3>
-                  <p style={{ marginTop: "0.5rem", color: "var(--color-gray2)" }}>
-                    {user.clinicStatus === "approved"
-                      ? "Your clinic account is approved. Wholesale pricing is now available."
-                      : user.clinicStatus === "rejected"
-                        ? "Your clinic application was rejected. Contact support for review."
-                        : "Your clinic application is pending admin review."}
-                  </p>
-                  <ol style={{ marginTop: "0.8rem", paddingLeft: "1rem", color: "var(--color-gray2)" }}>
-                    <li>Submit clinic details at signup.</li>
-                    <li>Admin reviews your business information in WordPress.</li>
-                    <li>If approved, your account gets wholesale role/pricing access.</li>
-                  </ol>
-                </div>
+                <article className={`profile-card profile-card--clinic profile-card--${clinicStatusTone}`}>
+                  <p className="profile-card__label superscript">Business Account</p>
+                  <h2 className="profile-card__title profile-clinic-status">
+                    {clinicStatus === "approved"
+                      ? "Approved"
+                      : clinicStatus === "rejected"
+                        ? "Not Approved"
+                        : "Pending Review"}
+                  </h2>
+                  <p className="profile-card__copy">{clinicStatusMessage}</p>
+                  {user.businessInfo?.businessName || user.businessInfo?.clinicName ? (
+                    <p className="profile-card__copy">
+                      Registered as: {user.businessInfo.businessName || user.businessInfo.clinicName}
+                    </p>
+                  ) : null}
+                </article>
               ) : null}
-
-              {user.businessInfo && Object.values(user.businessInfo).some(Boolean) ? (
-                <div style={{ border: "1px solid rgba(0,0,0,0.08)", padding: "1.25rem", borderRadius: "12px" }}>
-                  <p style={{ fontSize: "0.8rem", letterSpacing: "0.08em", textTransform: "uppercase", opacity: 0.65 }}>
-                    Business Details
-                  </p>
-                  <ul style={{ marginTop: "0.8rem", display: "grid", gap: "0.35rem", paddingLeft: "1rem" }}>
-                    {user.businessInfo.clinicName ? <li>Clinic: {user.businessInfo.clinicName}</li> : null}
-                    {user.businessInfo.businessName ? <li>Business: {user.businessInfo.businessName}</li> : null}
-                    {user.businessInfo.licenseNumber ? <li>License: {user.businessInfo.licenseNumber}</li> : null}
-                    {user.businessInfo.taxId ? <li>Tax/VAT: {user.businessInfo.taxId}</li> : null}
-                    {user.businessInfo.website ? <li>Website: {user.businessInfo.website}</li> : null}
-                    {user.businessInfo.phone ? <li>Phone: {user.businessInfo.phone}</li> : null}
-                  </ul>
-                </div>
-              ) : null}
-
-              <div style={{ display: "flex", gap: "0.75rem", marginTop: "0.4rem" }}>
-                <Link href="/products" className="btn">
-                  Continue Shopping
-                </Link>
-                <button
-                  type="button"
-                  className="btn"
-                  onClick={() => void handleLogout()}
-                  disabled={logoutBusy}
-                  style={{ background: "transparent", color: "var(--color-text)" }}
-                >
-                  {logoutBusy ? "Signing out..." : "Log out"}
-                </button>
-              </div>
             </div>
           ) : null}
         </div>

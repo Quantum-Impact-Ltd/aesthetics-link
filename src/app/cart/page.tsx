@@ -19,8 +19,6 @@ const EMPTY_CART: StorefrontCart = {
   needsShipping: false,
 };
 
-const CHECKOUT_URL = process.env.NEXT_PUBLIC_WOOCOMMERCE_CHECKOUT_URL?.trim() ?? "";
-
 export default function CartPage() {
   const [cart, setCart] = useState<StorefrontCart>(EMPTY_CART);
   const [loading, setLoading] = useState(true);
@@ -188,10 +186,7 @@ export default function CartPage() {
             </button>
 
             <p style={{ fontSize: "0.8rem", color: "var(--color-gray2)", textAlign: "center", marginTop: "1rem" }}>
-              Checkout is handled on your WooCommerce checkout subdomain.
-            </p>
-            <p style={{ fontSize: "0.75rem", color: "var(--color-gray2)", textAlign: "center", marginTop: "0.5rem" }}>
-              Destination: {CHECKOUT_URL || "Woo checkout (resolved by bridge)"}
+              You will be redirected to secure checkout to complete payment.
             </p>
 
             {error ? (
