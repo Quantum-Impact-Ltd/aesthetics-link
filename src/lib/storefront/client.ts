@@ -215,7 +215,29 @@ export function getCachedCartSnapshot(): StorefrontCart | null {
 
 // ── Store API client ───────────────────────────────────────────────────────
 
-async function requestStoreApi<T>(path: string, init?: RequestInit): Promise<T> {
+function isNonceErrorPayload(payload: unknown): boolean {
+  const record = asRecord(payload);
+  if (!record) return false;
+  const message = typeof record.message === "string" ? record.message : "";
+  const code = typeof record.code === "string" ? record.code : "";
+  return /nonce/i.test(message) || /nonce/i.test(code);
+}
+
+async function refreshNonce(): Promise<void> {
+  // A GET to /cart causes WooCommerce to return a fresh Nonce response header,
+  // which the proxy stores as the woo_nonce_token cookie for the next mutation.
+  try {
+    await fetch("/api/woo/cart", {
+      method: "GET",
+      cache: "no-store",
+      headers: { Accept: "application/json" },
+    });
+  } catch {
+    // Best-effort — if this fails the retry below will also fail with the real error.
+  }
+}
+
+async function requestStoreApi<T>(path: string, init?: RequestInit, retried = false): Promise<T> {
   let response: Response;
   try {
     response = await fetch(`/api/woo${path}`, {
@@ -239,6 +261,13 @@ async function requestStoreApi<T>(path: string, init?: RequestInit): Promise<T> 
     : await response.text().catch(() => "");
 
   if (!response.ok) {
+    // On a nonce error for mutation requests, refresh the nonce and retry once.
+    const isMutation = init?.method && init.method !== "GET" && init.method !== "HEAD";
+    if (!retried && isMutation && (response.status === 401 || response.status === 403) && isNonceErrorPayload(payload)) {
+      await refreshNonce();
+      return requestStoreApi<T>(path, init, true);
+    }
+
     const message =
       typeof payload === "object" &&
       payload &&
