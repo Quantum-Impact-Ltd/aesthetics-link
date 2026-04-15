@@ -49,19 +49,17 @@ function checkAuthorization(req: NextRequest, body: string): AuthResult {
 export async function POST(req: NextRequest): Promise<NextResponse> {
   const body = await req.text();
 
+  // WooCommerce sends a signature-less ping (body: "webhook_id=<n>") when a
+  // webhook is first created to verify the URL is reachable. It expects 2xx
+  // back or it marks the webhook as failed. No revalidation needed for pings.
+  const topic = req.headers.get("x-wc-webhook-topic") ?? "";
+  const isPing = topic === "ping" || /^webhook_id=\d+$/.test(body.trim());
+  if (isPing) {
+    return NextResponse.json({ ok: true, ping: true });
+  }
+
   const auth = checkAuthorization(req, body);
   if (!auth.ok) {
-    // Log to server console (visible in Next.js terminal, not browser)
-    const webhookSecret = process.env.WOOCOMMERCE_WEBHOOK_SECRET?.trim();
-    const signature = req.headers.get("x-wc-webhook-signature");
-    console.warn("[woo-webhook] 401 auth failed", {
-      reason: auth.reason,
-      secretLength: webhookSecret?.length ?? 0,
-      signaturePresent: Boolean(signature),
-      signatureLength: signature?.length ?? 0,
-      bodyLength: body.length,
-      bodyPreview: body.slice(0, 80),
-    });
     return NextResponse.json(
       { ok: false, message: "Unauthorized revalidation request.", reason: auth.reason },
       { status: 401 },
