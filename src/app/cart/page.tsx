@@ -30,6 +30,7 @@ export default function CartPage() {
   const queryClient = useQueryClient();
   const [initialCachedCart] = useState<StorefrontCart | null>(() => getCachedCartSnapshot());
   const [error, setError] = useState<string | null>(null);
+  const [redirectingToCheckout, setRedirectingToCheckout] = useState(false);
   const [checkoutErrorMessage] = useState<string | null>(() => {
     if (typeof window === "undefined") {
       return null;
@@ -131,8 +132,6 @@ export default function CartPage() {
   const cart = cartQuery.data ?? initialCachedCart ?? EMPTY_CART;
   const loading = cartQuery.isPending;
   const busy = quantityMutation.isPending || removeMutation.isPending;
-  const hasLiveCart =
-    cartQuery.isSuccess && (initialCachedCart === null || cartQuery.isFetchedAfterMount);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -173,7 +172,19 @@ export default function CartPage() {
   );
 
   function handleGoToCheckout(): void {
-    window.location.assign("/api/checkout/bridge");
+    if (redirectingToCheckout) {
+      return;
+    }
+
+    setRedirectingToCheckout(true);
+    setError(null);
+
+    try {
+      window.location.assign("/api/checkout/bridge");
+    } catch {
+      setRedirectingToCheckout(false);
+      setError("Unable to open checkout right now. Please try again.");
+    }
   }
 
   return (
@@ -286,9 +297,10 @@ export default function CartPage() {
               type="button"
               className="checkout-btn"
               onClick={handleGoToCheckout}
-              disabled={cart.items.length === 0 || loading || busy || !hasLiveCart}
+              disabled={cart.items.length === 0 || loading || busy || redirectingToCheckout}
+              aria-busy={redirectingToCheckout}
             >
-              Proceed to Secure Checkout
+              {redirectingToCheckout ? "Redirecting to Secure Checkout..." : "Proceed to Secure Checkout"}
             </button>
 
             <p style={{ fontSize: "0.8rem", color: "var(--color-gray2)", textAlign: "center", marginTop: "1rem" }}>
