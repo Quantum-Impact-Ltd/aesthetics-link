@@ -37,6 +37,45 @@ It creates database tables:
    - `Approve` -> role becomes `wholesale_customer`, clinic status becomes `approved`.
    - `Reject` -> role becomes `customer`, clinic status becomes `rejected`.
 
+## Native wholesale pricing (no ADP required)
+
+This plugin now applies wholesale pricing directly for approved `wholesale_customer` users across:
+
+- Product cards and product detail API overlays (`/auth/wholesale-prices`)
+- Woo Store API cart totals
+- Woo checkout totals
+
+### Rule priority
+
+1. Variation fixed wholesale price
+2. Variation wholesale discount %
+3. Product fixed wholesale price
+4. Product wholesale discount %
+5. Product category wholesale discount % (highest matching category)
+6. Optional global default (`AL_B2B_DEFAULT_WHOLESALE_DISCOUNT_PERCENT` or option `al_b2b_default_wholesale_discount_percent`)
+
+### WordPress setup steps
+
+1. Approve clinic users in `Users -> Clinic Applications` so they have role `wholesale_customer` and status `approved`.
+2. Set product-level wholesale values:
+   - Go to `Products -> Edit Product -> Product data -> General`.
+   - Fill either:
+     - `Wholesale fixed price` (exact wholesale price), or
+     - `Wholesale discount (%)` (percent off regular price).
+3. For variable products:
+   - In `Product data -> Variations`, open each variation.
+   - Fill variation `Wholesale fixed price` or `Wholesale discount (%)`.
+   - Variation values override parent product values.
+4. Optional category-level default:
+   - Go to `Products -> Categories`, edit a category.
+   - Set `Wholesale discount (%)`.
+5. Save product/category changes.
+
+### Important for stability
+
+- Deactivate `Advanced Dynamic Pricing and Discount Rules for WooCommerce` after migrating rules to this plugin.
+- Keeping ADP active can still interfere with Store API cart processing and cause checkout/cart runtime errors.
+
 ## Email verification and reset
 
 1. Registration creates account with `al_email_verified=0`.

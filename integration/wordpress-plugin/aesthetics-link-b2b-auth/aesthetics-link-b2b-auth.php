@@ -2,7 +2,7 @@
 /**
  * Plugin Name: AestheticsLink B2B Auth
  * Description: Custom REST auth, clinic approval workflow, and wholesale pricing endpoints for AestheticsLink storefront.
- * Version: 0.2.0
+ * Version: 0.3.0
  * Author: AestheticsLink
  */
 
@@ -22,6 +22,9 @@ defined('AL_B2B_EMAIL_VERIFY_HASH_META')     || define('AL_B2B_EMAIL_VERIFY_HASH
 defined('AL_B2B_EMAIL_VERIFY_EXPIRES_META')  || define('AL_B2B_EMAIL_VERIFY_EXPIRES_META',  'al_email_verification_expires');
 defined('AL_B2B_PASSWORD_RESET_HASH_META')   || define('AL_B2B_PASSWORD_RESET_HASH_META',   'al_password_reset_hash');
 defined('AL_B2B_PASSWORD_RESET_EXPIRES_META') || define('AL_B2B_PASSWORD_RESET_EXPIRES_META', 'al_password_reset_expires');
+defined('AL_B2B_WHOLESALE_PRICE_META')       || define('AL_B2B_WHOLESALE_PRICE_META',       '_al_b2b_wholesale_price');
+defined('AL_B2B_WHOLESALE_PERCENT_META')     || define('AL_B2B_WHOLESALE_PERCENT_META',     '_al_b2b_wholesale_discount_percent');
+defined('AL_B2B_WHOLESALE_TERM_PERCENT_META') || define('AL_B2B_WHOLESALE_TERM_PERCENT_META', 'al_b2b_wholesale_discount_percent');
 
 defined('AL_B2B_ADMIN_NONCE_ACTION')         || define('AL_B2B_ADMIN_NONCE_ACTION',         'al_b2b_clinic_decision');
 defined('AL_B2B_VERIFY_TTL')                 || define('AL_B2B_VERIFY_TTL',                 2 * DAY_IN_SECONDS);
@@ -37,6 +40,21 @@ add_action('rest_api_init', 'al_b2b_register_routes');
 add_action(AL_B2B_CLEANUP_EVENT, 'al_b2b_cleanup_expired_sessions');
 add_filter('allowed_redirect_hosts', 'al_b2b_allow_frontend_redirect_host');
 add_filter('woocommerce_get_return_url', 'al_b2b_override_return_url', 10, 2);
+add_filter('determine_current_user', 'al_b2b_determine_current_user_for_store_api', 25);
+add_filter('woocommerce_product_get_price', 'al_b2b_filter_wholesale_price', 99, 2);
+add_filter('woocommerce_product_get_regular_price', 'al_b2b_filter_wholesale_regular_price', 99, 2);
+add_filter('woocommerce_product_get_sale_price', 'al_b2b_filter_wholesale_sale_price', 99, 2);
+add_filter('woocommerce_product_variation_get_price', 'al_b2b_filter_wholesale_price', 99, 2);
+add_filter('woocommerce_product_variation_get_regular_price', 'al_b2b_filter_wholesale_regular_price', 99, 2);
+add_filter('woocommerce_product_variation_get_sale_price', 'al_b2b_filter_wholesale_sale_price', 99, 2);
+add_action('woocommerce_product_options_pricing', 'al_b2b_render_product_wholesale_fields');
+add_action('woocommerce_process_product_meta', 'al_b2b_save_product_wholesale_fields');
+add_action('woocommerce_variation_options_pricing', 'al_b2b_render_variation_wholesale_fields', 10, 3);
+add_action('woocommerce_save_product_variation', 'al_b2b_save_variation_wholesale_fields', 10, 2);
+add_action('product_cat_add_form_fields', 'al_b2b_render_product_cat_wholesale_add_fields');
+add_action('product_cat_edit_form_fields', 'al_b2b_render_product_cat_wholesale_edit_fields', 10, 1);
+add_action('created_product_cat', 'al_b2b_save_product_cat_wholesale_fields', 10, 1);
+add_action('edited_product_cat', 'al_b2b_save_product_cat_wholesale_fields', 10, 1);
 add_action('template_redirect', 'al_b2b_lock_checkout_subdomain', 1);
 
 
@@ -627,6 +645,635 @@ function al_b2b_get_business_info_from_payload($payload) {
 		'website' => isset($business['website']) ? esc_url_raw($business['website']) : '',
 		'phone' => isset($business['phone']) ? sanitize_text_field($business['phone']) : '',
 	);
+}
+
+function al_b2b_get_authorization_header_value() {
+	$keys = array(
+		'HTTP_AUTHORIZATION',
+		'REDIRECT_HTTP_AUTHORIZATION',
+	);
+
+	foreach ($keys as $key) {
+		if (!empty($_SERVER[$key])) {
+			return trim((string) wp_unslash($_SERVER[$key]));
+		}
+	}
+
+	if (function_exists('apache_request_headers')) {
+		$headers = apache_request_headers();
+		if (is_array($headers)) {
+			foreach ($headers as $header_key => $header_value) {
+				if (strcasecmp((string) $header_key, 'Authorization') === 0) {
+					return trim((string) $header_value);
+				}
+			}
+		}
+	}
+
+	return '';
+}
+
+function al_b2b_parse_bearer_token_from_header($header_value) {
+	$header_value = trim((string) $header_value);
+	if (!$header_value) {
+		return '';
+	}
+
+	if (!preg_match('/Bearer\s+(.+)$/i', $header_value, $matches)) {
+		return '';
+	}
+
+	return trim((string) $matches[1]);
+}
+
+function al_b2b_request_targets_store_api() {
+	$request_uri = isset($_SERVER['REQUEST_URI']) ? trim((string) wp_unslash($_SERVER['REQUEST_URI'])) : '';
+	if (!$request_uri) {
+		return false;
+	}
+
+	return strpos($request_uri, '/wp-json/wc/store/') !== false;
+}
+
+function al_b2b_determine_current_user_for_store_api($current_user_id) {
+	$current_user_id = (int) $current_user_id;
+	if ($current_user_id > 0) {
+		return $current_user_id;
+	}
+
+	if (!(defined('REST_REQUEST') && REST_REQUEST)) {
+		return $current_user_id;
+	}
+
+	if (!al_b2b_request_targets_store_api()) {
+		return $current_user_id;
+	}
+
+	$token = al_b2b_parse_bearer_token_from_header(al_b2b_get_authorization_header_value());
+	if (!$token) {
+		return $current_user_id;
+	}
+
+	$user = al_b2b_get_user_from_token($token);
+	if (!$user || !isset($user->ID)) {
+		return $current_user_id;
+	}
+
+	return (int) $user->ID;
+}
+
+function al_b2b_parse_decimal($value) {
+	if ($value === null) {
+		return null;
+	}
+
+	$value = trim((string) $value);
+	if ($value === '') {
+		return null;
+	}
+
+	$normalized = str_replace(',', '.', $value);
+	if (!is_numeric($normalized)) {
+		return null;
+	}
+
+	return (float) $normalized;
+}
+
+function al_b2b_format_decimal_for_storage($value) {
+	if (!function_exists('wc_format_decimal') || !function_exists('wc_get_price_decimals')) {
+		return (string) $value;
+	}
+
+	return wc_format_decimal((float) $value, wc_get_price_decimals(), false);
+}
+
+function al_b2b_get_post_meta_decimal($post_id, $meta_key) {
+	$post_id = (int) $post_id;
+	$meta_key = (string) $meta_key;
+
+	if ($post_id <= 0 || !$meta_key) {
+		return null;
+	}
+
+	$value = get_post_meta($post_id, $meta_key, true);
+	return al_b2b_parse_decimal($value);
+}
+
+function al_b2b_get_term_meta_decimal($term_id, $meta_key) {
+	$term_id = (int) $term_id;
+	$meta_key = (string) $meta_key;
+	if ($term_id <= 0 || !$meta_key) {
+		return null;
+	}
+
+	$value = get_term_meta($term_id, $meta_key, true);
+	return al_b2b_parse_decimal($value);
+}
+
+function al_b2b_get_global_wholesale_discount_percent() {
+	$defined = defined('AL_B2B_DEFAULT_WHOLESALE_DISCOUNT_PERCENT')
+		? al_b2b_parse_decimal(AL_B2B_DEFAULT_WHOLESALE_DISCOUNT_PERCENT)
+		: null;
+
+	$from_option = al_b2b_parse_decimal(get_option('al_b2b_default_wholesale_discount_percent', ''));
+	$value = $defined !== null ? $defined : $from_option;
+
+	if ($value === null) {
+		return null;
+	}
+
+	$value = max(0.0, min(100.0, $value));
+	return $value;
+}
+
+function al_b2b_get_max_category_discount_percent($product_id) {
+	$product_id = (int) $product_id;
+	if ($product_id <= 0) {
+		return null;
+	}
+
+	static $cache = array();
+	if (array_key_exists($product_id, $cache)) {
+		return $cache[$product_id];
+	}
+
+	$terms = get_the_terms($product_id, 'product_cat');
+	if (!is_array($terms) || empty($terms)) {
+		$cache[$product_id] = null;
+		return null;
+	}
+
+	$max_percent = null;
+	foreach ($terms as $term) {
+		if (!isset($term->term_id)) {
+			continue;
+		}
+
+		$percent = al_b2b_get_term_meta_decimal((int) $term->term_id, AL_B2B_WHOLESALE_TERM_PERCENT_META);
+		if ($percent === null) {
+			continue;
+		}
+
+		$percent = max(0.0, min(100.0, $percent));
+		if ($max_percent === null || $percent > $max_percent) {
+			$max_percent = $percent;
+		}
+	}
+
+	$cache[$product_id] = $max_percent;
+	return $max_percent;
+}
+
+function al_b2b_get_wholesale_rule_from_post($post_id, $scope) {
+	$post_id = (int) $post_id;
+	$scope = sanitize_key((string) $scope);
+	if ($post_id <= 0) {
+		return null;
+	}
+
+	$fixed = al_b2b_get_post_meta_decimal($post_id, AL_B2B_WHOLESALE_PRICE_META);
+	if ($fixed !== null) {
+		return array(
+			'type' => 'fixed_price',
+			'value' => max(0.0, $fixed),
+			'scope' => $scope,
+			'id' => $post_id,
+		);
+	}
+
+	$percent = al_b2b_get_post_meta_decimal($post_id, AL_B2B_WHOLESALE_PERCENT_META);
+	if ($percent !== null) {
+		return array(
+			'type' => 'percent',
+			'value' => max(0.0, min(100.0, $percent)),
+			'scope' => $scope,
+			'id' => $post_id,
+		);
+	}
+
+	return null;
+}
+
+function al_b2b_get_wholesale_rule_for_product($product) {
+	if (!$product || !is_a($product, 'WC_Product')) {
+		return null;
+	}
+
+	$product_id = (int) $product->get_id();
+	if ($product_id <= 0) {
+		return null;
+	}
+
+	static $cache = array();
+	if (array_key_exists($product_id, $cache)) {
+		return $cache[$product_id];
+	}
+
+	$parent_id = $product_id;
+
+	if (method_exists($product, 'is_type') && $product->is_type('variation')) {
+		$variation_rule = al_b2b_get_wholesale_rule_from_post($product_id, 'variation');
+		if ($variation_rule) {
+			$cache[$product_id] = $variation_rule;
+			return $variation_rule;
+		}
+
+		$parent_id = (int) $product->get_parent_id();
+	}
+
+	if ($parent_id > 0) {
+		$product_rule = al_b2b_get_wholesale_rule_from_post($parent_id, 'product');
+		if ($product_rule) {
+			$cache[$product_id] = $product_rule;
+			return $product_rule;
+		}
+
+		$category_percent = al_b2b_get_max_category_discount_percent($parent_id);
+		if ($category_percent !== null) {
+			$rule = array(
+				'type' => 'percent',
+				'value' => $category_percent,
+				'scope' => 'category',
+				'id' => $parent_id,
+			);
+			$cache[$product_id] = $rule;
+			return $rule;
+		}
+	}
+
+	$global_percent = al_b2b_get_global_wholesale_discount_percent();
+	if ($global_percent !== null) {
+		$rule = array(
+			'type' => 'percent',
+			'value' => $global_percent,
+			'scope' => 'global',
+			'id' => 0,
+		);
+		$cache[$product_id] = $rule;
+		return $rule;
+	}
+
+	$cache[$product_id] = null;
+	return null;
+}
+
+function al_b2b_get_product_base_price_data($product) {
+	if (!$product || !is_a($product, 'WC_Product')) {
+		return null;
+	}
+
+	$regular = method_exists($product, 'get_regular_price')
+		? al_b2b_normalize_price_number($product->get_regular_price('edit'))
+		: null;
+	$current = method_exists($product, 'get_price')
+		? al_b2b_normalize_price_number($product->get_price('edit'))
+		: null;
+
+	if ($regular === null && $current === null) {
+		return null;
+	}
+
+	if ($regular === null) {
+		$regular = $current;
+	}
+
+	if ($current === null) {
+		$current = $regular;
+	}
+
+	return array(
+		'regular' => max(0.0, (float) $regular),
+		'current' => max(0.0, (float) $current),
+	);
+}
+
+function al_b2b_get_wholesale_user_id() {
+	$current_user_id = (int) get_current_user_id();
+	if ($current_user_id <= 0) {
+		return 0;
+	}
+
+	static $cache = array();
+	if (array_key_exists($current_user_id, $cache)) {
+		return (int) $cache[$current_user_id];
+	}
+
+	$current_user = wp_get_current_user();
+	if (!$current_user || !isset($current_user->ID) || (int) $current_user->ID !== $current_user_id) {
+		$cache[$current_user_id] = 0;
+		return 0;
+	}
+
+	$cache[$current_user_id] = al_b2b_is_wholesale_approved_user($current_user) ? $current_user_id : 0;
+	return (int) $cache[$current_user_id];
+}
+
+function al_b2b_calculate_wholesale_price_data($product) {
+	$user_id = al_b2b_get_wholesale_user_id();
+	if ($user_id <= 0) {
+		return null;
+	}
+
+	if (!$product || !is_a($product, 'WC_Product')) {
+		return null;
+	}
+
+	$product_id = (int) $product->get_id();
+	if ($product_id <= 0) {
+		return null;
+	}
+
+	static $cache = array();
+	$cache_key = $user_id . ':' . $product_id;
+	if (array_key_exists($cache_key, $cache)) {
+		return $cache[$cache_key];
+	}
+
+	$base = al_b2b_get_product_base_price_data($product);
+	if (!$base) {
+		$cache[$cache_key] = null;
+		return null;
+	}
+
+	$regular = (float) $base['regular'];
+	$retail_active = (float) $base['current'];
+	$rule = al_b2b_get_wholesale_rule_for_product($product);
+	$price = $retail_active;
+
+	if ($rule && isset($rule['type'], $rule['value'])) {
+		if ($rule['type'] === 'fixed_price') {
+			$price = max(0.0, (float) $rule['value']);
+		} elseif ($rule['type'] === 'percent') {
+			$percent = max(0.0, min(100.0, (float) $rule['value']));
+			$discounted = $regular * (1 - ($percent / 100));
+			$price = max(0.0, min($discounted, $retail_active));
+		}
+	}
+
+	if (function_exists('wc_get_price_decimals')) {
+		$decimals = wc_get_price_decimals();
+		$regular = (float) round($regular, $decimals);
+		$price = (float) round($price, $decimals);
+	}
+
+	$has_discount = $price < $regular;
+	$result = array(
+		'regular' => $regular,
+		'price' => $price,
+		'hasDiscount' => $has_discount,
+		'sale_price' => $has_discount ? $price : null,
+		'rule' => $rule,
+	);
+
+	$cache[$cache_key] = $result;
+	return $result;
+}
+
+function al_b2b_filter_wholesale_price($price, $product) {
+	$calculated = al_b2b_calculate_wholesale_price_data($product);
+	if (!$calculated || !isset($calculated['price'])) {
+		return $price;
+	}
+
+	return al_b2b_format_decimal_for_storage($calculated['price']);
+}
+
+function al_b2b_filter_wholesale_regular_price($regular_price, $product) {
+	$calculated = al_b2b_calculate_wholesale_price_data($product);
+	if (!$calculated || !isset($calculated['regular'])) {
+		return $regular_price;
+	}
+
+	return al_b2b_format_decimal_for_storage($calculated['regular']);
+}
+
+function al_b2b_filter_wholesale_sale_price($sale_price, $product) {
+	$calculated = al_b2b_calculate_wholesale_price_data($product);
+	if (!$calculated) {
+		return $sale_price;
+	}
+
+	if (empty($calculated['hasDiscount']) || !isset($calculated['sale_price'])) {
+		return '';
+	}
+
+	return al_b2b_format_decimal_for_storage($calculated['sale_price']);
+}
+
+function al_b2b_save_decimal_post_meta($post_id, $meta_key, $raw_value, $min = null, $max = null) {
+	$post_id = (int) $post_id;
+	$meta_key = (string) $meta_key;
+	if ($post_id <= 0 || !$meta_key) {
+		return;
+	}
+
+	$value = al_b2b_parse_decimal($raw_value);
+	if ($value === null) {
+		delete_post_meta($post_id, $meta_key);
+		return;
+	}
+
+	if ($min !== null) {
+		$value = max((float) $min, $value);
+	}
+	if ($max !== null) {
+		$value = min((float) $max, $value);
+	}
+
+	update_post_meta($post_id, $meta_key, al_b2b_format_decimal_for_storage($value));
+}
+
+function al_b2b_save_decimal_term_meta($term_id, $meta_key, $raw_value, $min = null, $max = null) {
+	$term_id = (int) $term_id;
+	$meta_key = (string) $meta_key;
+	if ($term_id <= 0 || !$meta_key) {
+		return;
+	}
+
+	$value = al_b2b_parse_decimal($raw_value);
+	if ($value === null) {
+		delete_term_meta($term_id, $meta_key);
+		return;
+	}
+
+	if ($min !== null) {
+		$value = max((float) $min, $value);
+	}
+	if ($max !== null) {
+		$value = min((float) $max, $value);
+	}
+
+	update_term_meta($term_id, $meta_key, al_b2b_format_decimal_for_storage($value));
+}
+
+function al_b2b_render_product_wholesale_fields() {
+	if (!function_exists('woocommerce_wp_text_input') || !function_exists('get_woocommerce_currency_symbol')) {
+		return;
+	}
+
+	$currency_symbol = get_woocommerce_currency_symbol();
+
+	echo '<div class="options_group">';
+	woocommerce_wp_text_input(array(
+		'id' => AL_B2B_WHOLESALE_PRICE_META,
+		'label' => sprintf('Wholesale fixed price (%s)', $currency_symbol),
+		'description' => 'Optional fixed wholesale price override for this product. Takes precedence over percentage rules.',
+		'desc_tip' => true,
+		'type' => 'number',
+		'custom_attributes' => array(
+			'step' => '0.01',
+			'min' => '0',
+		),
+	));
+
+	woocommerce_wp_text_input(array(
+		'id' => AL_B2B_WHOLESALE_PERCENT_META,
+		'label' => 'Wholesale discount (%)',
+		'description' => 'Optional wholesale discount percent for this product (0-100). Used when fixed price is empty.',
+		'desc_tip' => true,
+		'type' => 'number',
+		'custom_attributes' => array(
+			'step' => '0.01',
+			'min' => '0',
+			'max' => '100',
+		),
+	));
+	echo '</div>';
+}
+
+function al_b2b_save_product_wholesale_fields($product_id) {
+	$product_id = (int) $product_id;
+	if ($product_id <= 0 || !current_user_can('edit_post', $product_id)) {
+		return;
+	}
+
+	$fixed_raw = isset($_POST[AL_B2B_WHOLESALE_PRICE_META]) ? wp_unslash($_POST[AL_B2B_WHOLESALE_PRICE_META]) : '';
+	$percent_raw = isset($_POST[AL_B2B_WHOLESALE_PERCENT_META]) ? wp_unslash($_POST[AL_B2B_WHOLESALE_PERCENT_META]) : '';
+
+	al_b2b_save_decimal_post_meta($product_id, AL_B2B_WHOLESALE_PRICE_META, $fixed_raw, 0, null);
+	al_b2b_save_decimal_post_meta($product_id, AL_B2B_WHOLESALE_PERCENT_META, $percent_raw, 0, 100);
+}
+
+function al_b2b_render_variation_wholesale_fields($loop, $variation_data, $variation) {
+	if (!function_exists('woocommerce_wp_text_input') || !function_exists('get_woocommerce_currency_symbol')) {
+		return;
+	}
+
+	$variation_id = isset($variation->ID) ? (int) $variation->ID : 0;
+	if ($variation_id <= 0) {
+		return;
+	}
+
+	$currency_symbol = get_woocommerce_currency_symbol();
+	$fixed_value = get_post_meta($variation_id, AL_B2B_WHOLESALE_PRICE_META, true);
+	$percent_value = get_post_meta($variation_id, AL_B2B_WHOLESALE_PERCENT_META, true);
+
+	echo '<div class="form-row form-row-full">';
+	woocommerce_wp_text_input(array(
+		'id' => 'al_b2b_wholesale_price_' . $loop,
+		'name' => 'al_b2b_wholesale_price[' . $loop . ']',
+		'label' => sprintf('Wholesale fixed price (%s)', $currency_symbol),
+		'description' => 'Optional variation-level fixed wholesale price.',
+		'desc_tip' => true,
+		'type' => 'number',
+		'value' => $fixed_value,
+		'custom_attributes' => array(
+			'step' => '0.01',
+			'min' => '0',
+		),
+	));
+	woocommerce_wp_text_input(array(
+		'id' => 'al_b2b_wholesale_percent_' . $loop,
+		'name' => 'al_b2b_wholesale_percent[' . $loop . ']',
+		'label' => 'Wholesale discount (%)',
+		'description' => 'Optional variation-level discount percent (0-100).',
+		'desc_tip' => true,
+		'type' => 'number',
+		'value' => $percent_value,
+		'custom_attributes' => array(
+			'step' => '0.01',
+			'min' => '0',
+			'max' => '100',
+		),
+	));
+	echo '</div>';
+}
+
+function al_b2b_save_variation_wholesale_fields($variation_id, $index) {
+	$variation_id = (int) $variation_id;
+	$index = (int) $index;
+	if ($variation_id <= 0 || !current_user_can('edit_post', $variation_id)) {
+		return;
+	}
+
+	$fixed_values = isset($_POST['al_b2b_wholesale_price']) && is_array($_POST['al_b2b_wholesale_price'])
+		? $_POST['al_b2b_wholesale_price']
+		: array();
+	$percent_values = isset($_POST['al_b2b_wholesale_percent']) && is_array($_POST['al_b2b_wholesale_percent'])
+		? $_POST['al_b2b_wholesale_percent']
+		: array();
+
+	$fixed_raw = isset($fixed_values[$index]) ? wp_unslash($fixed_values[$index]) : '';
+	$percent_raw = isset($percent_values[$index]) ? wp_unslash($percent_values[$index]) : '';
+
+	al_b2b_save_decimal_post_meta($variation_id, AL_B2B_WHOLESALE_PRICE_META, $fixed_raw, 0, null);
+	al_b2b_save_decimal_post_meta($variation_id, AL_B2B_WHOLESALE_PERCENT_META, $percent_raw, 0, 100);
+}
+
+function al_b2b_render_product_cat_wholesale_add_fields() {
+	?>
+	<div class="form-field term-wholesale-discount-wrap">
+		<label for="<?php echo esc_attr(AL_B2B_WHOLESALE_TERM_PERCENT_META); ?>">Wholesale discount (%)</label>
+		<input
+			type="number"
+			step="0.01"
+			min="0"
+			max="100"
+			name="<?php echo esc_attr(AL_B2B_WHOLESALE_TERM_PERCENT_META); ?>"
+			id="<?php echo esc_attr(AL_B2B_WHOLESALE_TERM_PERCENT_META); ?>"
+			value=""
+		/>
+		<p class="description">Optional default wholesale discount percent for this category (0-100).</p>
+	</div>
+	<?php
+}
+
+function al_b2b_render_product_cat_wholesale_edit_fields($term) {
+	$term_id = isset($term->term_id) ? (int) $term->term_id : 0;
+	$value = $term_id > 0 ? get_term_meta($term_id, AL_B2B_WHOLESALE_TERM_PERCENT_META, true) : '';
+	?>
+	<tr class="form-field term-wholesale-discount-wrap">
+		<th scope="row">
+			<label for="<?php echo esc_attr(AL_B2B_WHOLESALE_TERM_PERCENT_META); ?>">Wholesale discount (%)</label>
+		</th>
+		<td>
+			<input
+				type="number"
+				step="0.01"
+				min="0"
+				max="100"
+				name="<?php echo esc_attr(AL_B2B_WHOLESALE_TERM_PERCENT_META); ?>"
+				id="<?php echo esc_attr(AL_B2B_WHOLESALE_TERM_PERCENT_META); ?>"
+				value="<?php echo esc_attr((string) $value); ?>"
+			/>
+			<p class="description">Optional default wholesale discount percent for this category (0-100).</p>
+		</td>
+	</tr>
+	<?php
+}
+
+function al_b2b_save_product_cat_wholesale_fields($term_id) {
+	$term_id = (int) $term_id;
+	if ($term_id <= 0 || !current_user_can('manage_product_terms')) {
+		return;
+	}
+
+	$raw_value = isset($_POST[AL_B2B_WHOLESALE_TERM_PERCENT_META])
+		? wp_unslash($_POST[AL_B2B_WHOLESALE_TERM_PERCENT_META])
+		: '';
+
+	al_b2b_save_decimal_term_meta($term_id, AL_B2B_WHOLESALE_TERM_PERCENT_META, $raw_value, 0, 100);
 }
 
 function al_b2b_parse_bearer_token($request) {

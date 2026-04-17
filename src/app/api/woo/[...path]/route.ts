@@ -4,6 +4,7 @@ import { getWooStoreBaseUrl } from "@/lib/storefront/config";
 
 const CART_TOKEN_COOKIE = "woo_cart_token";
 const NONCE_TOKEN_COOKIE = "woo_nonce_token";
+const SESSION_TOKEN_COOKIE = "al_session_token";
 const ALLOWED_ROOTS = new Set(["products", "cart", "checkout", "order"]);
 const RETRYABLE_NETWORK_CODES = new Set([
   "ECONNRESET",
@@ -150,9 +151,14 @@ async function proxyWooStoreApi(
 
   const cartToken = request.cookies.get(CART_TOKEN_COOKIE)?.value;
   const nonceToken = request.cookies.get(NONCE_TOKEN_COOKIE)?.value;
+  const sessionToken = request.cookies.get(SESSION_TOKEN_COOKIE)?.value;
 
   if (cartToken) {
     upstreamHeaders.set("Cart-Token", cartToken);
+  }
+
+  if (sessionToken) {
+    upstreamHeaders.set("Authorization", `Bearer ${sessionToken}`);
   }
 
   if (nonceToken && request.method !== "GET" && request.method !== "HEAD") {
