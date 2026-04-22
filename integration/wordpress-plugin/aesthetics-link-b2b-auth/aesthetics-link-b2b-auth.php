@@ -2629,6 +2629,14 @@ function al_b2b_register_admin_menu() {
 		'al-b2b-clinic-applications',
 		'al_b2b_render_clinic_applications_page'
 	);
+
+	add_users_page(
+		'Marketing Controls',
+		'Marketing Controls',
+		'promote_users',
+		'al-b2b-marketing-reviews',
+		'al_b2b_render_marketing_reviews_page'
+	);
 }
 
 function al_b2b_set_clinic_decision($user_id, $decision, $actor_user_id) {
@@ -2699,31 +2707,193 @@ function al_b2b_handle_admin_actions() {
 		return;
 	}
 
-	if (!isset($_POST['al_b2b_admin_action']) || $_POST['al_b2b_admin_action'] !== 'clinic_decision') {
+	if (!isset($_POST['al_b2b_admin_action'])) {
+		return;
+	}
+
+	$admin_action = sanitize_key(wp_unslash($_POST['al_b2b_admin_action']));
+	$allowed_actions = array(
+		'clinic_decision',
+		'newsletter_update_status',
+		'newsletter_resync',
+		'newsletter_delete',
+	);
+	if (!in_array($admin_action, $allowed_actions, true)) {
 		return;
 	}
 
 	check_admin_referer(AL_B2B_ADMIN_NONCE_ACTION);
-
-	$decision = isset($_POST['decision']) ? sanitize_key(wp_unslash($_POST['decision'])) : '';
-	$user_id = isset($_POST['user_id']) ? (int) $_POST['user_id'] : 0;
 	$actor_user_id = get_current_user_id();
 
-	if (!in_array($decision, array('approve', 'reject'), true) || $user_id <= 0) {
-		return;
+	if ($admin_action === 'clinic_decision') {
+		$decision = isset($_POST['decision']) ? sanitize_key(wp_unslash($_POST['decision'])) : '';
+		$user_id = isset($_POST['user_id']) ? (int) $_POST['user_id'] : 0;
+
+		if (!in_array($decision, array('approve', 'reject'), true) || $user_id <= 0) {
+			return;
+		}
+
+		$success = al_b2b_set_clinic_decision($user_id, $decision, $actor_user_id);
+		$redirect = add_query_arg(
+			array(
+				'page' => 'al-b2b-clinic-applications',
+				'al_b2b_notice' => $success ? 'updated' : 'failed',
+			),
+			admin_url('users.php')
+		);
+
+		wp_safe_redirect($redirect);
+		exit;
 	}
 
-	$success = al_b2b_set_clinic_decision($user_id, $decision, $actor_user_id);
-	$redirect = add_query_arg(
-		array(
-			'page' => 'al-b2b-clinic-applications',
-			'al_b2b_notice' => $success ? 'updated' : 'failed',
+	if ($admin_action === 'newsletter_update_status') {
+		$email = isset($_POST['email']) ? sanitize_email(wp_unslash($_POST['email'])) : '';
+		$status = isset($_POST['status']) ? sanitize_key(wp_unslash($_POST['status'])) : '';
+		$success = al_b2b_set_newsletter_status($email, $status);
+		$redirect = add_query_arg(
+			array(
+				'page' => 'al-b2b-marketing-reviews',
+				'al_b2b_notice' => $success ? 'newsletter_updated' : 'newsletter_failed',
+			),
+			admin_url('users.php')
+		);
+		wp_safe_redirect($redirect);
+		exit;
+	}
+
+	if ($admin_action === 'newsletter_resync') {
+		$email = isset($_POST['email']) ? sanitize_email(wp_unslash($_POST['email'])) : '';
+		$success = al_b2b_resync_newsletter_subscriber($email);
+		$redirect = add_query_arg(
+			array(
+				'page' => 'al-b2b-marketing-reviews',
+				'al_b2b_notice' => $success ? 'newsletter_synced' : 'newsletter_failed',
+			),
+			admin_url('users.php')
+		);
+		wp_safe_redirect($redirect);
+		exit;
+	}
+
+	if ($admin_action === 'newsletter_delete') {
+		$email = isset($_POST['email']) ? sanitize_email(wp_unslash($_POST['email'])) : '';
+		$success = al_b2b_delete_newsletter_subscriber($email);
+		$redirect = add_query_arg(
+			array(
+				'page' => 'al-b2b-marketing-reviews',
+				'al_b2b_notice' => $success ? 'newsletter_deleted' : 'newsletter_failed',
+			),
+			admin_url('users.php')
+		);
+		wp_safe_redirect($redirect);
+		exit;
+	}
+
+}
+
+function al_b2b_get_newsletter_subscribers($limit = 50) {
+	global $wpdb;
+
+	$table = al_b2b_get_newsletter_table_name();
+	$limit = max(1, min(200, (int) $limit));
+	if (!al_b2b_table_exists($table)) {
+		return array();
+	}
+
+	$rows = $wpdb->get_results( // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery
+		$wpdb->prepare(
+			"SELECT email, source, customer_type, region, status, updated_at
+			 FROM {$table}
+			 ORDER BY updated_at DESC
+			 LIMIT %d",
+			$limit
 		),
-		admin_url('users.php')
+		ARRAY_A
+	);
+	return is_array($rows) ? $rows : array();
+}
+
+function al_b2b_get_newsletter_subscriber($email) {
+	global $wpdb;
+
+	$email = sanitize_email((string) $email);
+	if (!$email || !is_email($email)) {
+		return null;
+	}
+
+	$table = al_b2b_get_newsletter_table_name();
+	if (!al_b2b_table_exists($table)) {
+		return null;
+	}
+
+	$row = $wpdb->get_row( // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery
+		$wpdb->prepare(
+			"SELECT email, source, customer_type, region, status FROM {$table} WHERE email = %s LIMIT 1",
+			strtolower($email)
+		),
+		ARRAY_A
 	);
 
-	wp_safe_redirect($redirect);
-	exit;
+	return is_array($row) ? $row : null;
+}
+
+function al_b2b_set_newsletter_status($email, $status) {
+	$email = sanitize_email((string) $email);
+	if (!$email || !is_email($email)) {
+		return false;
+	}
+
+	$status = al_b2b_normalize_newsletter_status($status);
+	$current = al_b2b_get_newsletter_subscriber($email);
+	if (!$current) {
+		return false;
+	}
+
+	return al_b2b_upsert_newsletter_subscriber($email, (string) $current['source'], $status, array(
+		'customer_type' => isset($current['customer_type']) ? $current['customer_type'] : '',
+		'region' => isset($current['region']) ? $current['region'] : '',
+	));
+}
+
+function al_b2b_delete_newsletter_subscriber($email) {
+	global $wpdb;
+
+	$email = sanitize_email((string) $email);
+	if (!$email || !is_email($email)) {
+		return false;
+	}
+
+	$table = al_b2b_get_newsletter_table_name();
+	if (!al_b2b_table_exists($table)) {
+		return false;
+	}
+
+	$deleted = $wpdb->delete( // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery
+		$table,
+		array('email' => strtolower($email)),
+		array('%s')
+	);
+
+	return $deleted !== false;
+}
+
+function al_b2b_resync_newsletter_subscriber($email) {
+	$row = al_b2b_get_newsletter_subscriber($email);
+	if (!$row) {
+		return false;
+	}
+
+	$email = isset($row['email']) ? sanitize_email((string) $row['email']) : '';
+	if (!$email || !is_email($email)) {
+		return false;
+	}
+
+	$sync = al_b2b_sync_newsletter_to_brevo($email, (string) $row['source'], array(
+		'customer_type' => isset($row['customer_type']) ? $row['customer_type'] : '',
+		'region' => isset($row['region']) ? $row['region'] : '',
+	));
+
+	return !empty($sync['ok']);
 }
 
 function al_b2b_get_recent_audit_logs($limit = 25) {
@@ -2847,6 +3017,7 @@ function al_b2b_render_clinic_applications_page() {
 	<div class="wrap">
 		<h1>Clinic Applications</h1>
 		<p>Review clinic registrations and approve or reject wholesale access.</p>
+		<p><a class="button" href="<?php echo esc_url(admin_url('users.php?page=al-b2b-marketing-reviews')); ?>">Open Marketing Controls</a></p>
 		<?php if ($notice === 'updated') : ?>
 			<div class="notice notice-success is-dismissible"><p>Clinic account updated.</p></div>
 		<?php elseif ($notice === 'failed') : ?>
@@ -3072,6 +3243,96 @@ function al_b2b_render_clinic_applications_page() {
 				</tbody>
 			</table>
 		<?php endif; ?>
+	</div>
+	<?php
+}
+
+function al_b2b_render_marketing_reviews_page() {
+	if (!current_user_can('promote_users')) {
+		wp_die('Insufficient permissions.');
+	}
+
+	$notice = isset($_GET['al_b2b_notice']) ? sanitize_key(wp_unslash($_GET['al_b2b_notice'])) : '';
+	$subscribers = al_b2b_get_newsletter_subscribers(60);
+	?>
+	<div class="wrap">
+		<h1>Marketing Controls</h1>
+		<p>Manage newsletter subscribers and Brevo sync from one place.</p>
+
+		<?php if ($notice === 'newsletter_updated') : ?>
+			<div class="notice notice-success is-dismissible"><p>Subscriber status updated.</p></div>
+		<?php elseif ($notice === 'newsletter_synced') : ?>
+			<div class="notice notice-success is-dismissible"><p>Subscriber synced to Brevo.</p></div>
+		<?php elseif ($notice === 'newsletter_deleted') : ?>
+			<div class="notice notice-success is-dismissible"><p>Subscriber deleted.</p></div>
+		<?php elseif ($notice === 'newsletter_failed') : ?>
+			<div class="notice notice-error is-dismissible"><p>Action failed. Check values and try again.</p></div>
+		<?php endif; ?>
+
+		<h2 style="margin-top: 1.5rem;">Newsletter Subscribers</h2>
+		<?php if (empty($subscribers)) : ?>
+			<p>No subscriber records found.</p>
+		<?php else : ?>
+			<table class="widefat striped" style="margin-top: 0.75rem;">
+				<thead>
+					<tr>
+						<th>Email</th>
+						<th>Source</th>
+						<th>Type</th>
+						<th>Region</th>
+						<th>Status</th>
+						<th>Updated (UTC)</th>
+						<th>Actions</th>
+					</tr>
+				</thead>
+				<tbody>
+					<?php foreach ($subscribers as $subscriber) : ?>
+						<?php
+						$email = isset($subscriber['email']) ? (string) $subscriber['email'] : '';
+						$status = isset($subscriber['status']) ? (string) $subscriber['status'] : 'subscribed';
+						?>
+						<tr>
+							<td><?php echo esc_html($email); ?></td>
+							<td><?php echo esc_html(isset($subscriber['source']) ? (string) $subscriber['source'] : ''); ?></td>
+							<td><?php echo esc_html(isset($subscriber['customer_type']) ? (string) $subscriber['customer_type'] : ''); ?></td>
+							<td><?php echo esc_html(isset($subscriber['region']) ? (string) $subscriber['region'] : ''); ?></td>
+							<td><?php echo esc_html($status); ?></td>
+							<td><?php echo esc_html(isset($subscriber['updated_at']) ? (string) $subscriber['updated_at'] : ''); ?></td>
+							<td>
+								<form method="post" style="display:inline-flex; align-items:center; gap:0.5rem; margin-right:0.5rem;">
+									<?php wp_nonce_field(AL_B2B_ADMIN_NONCE_ACTION); ?>
+									<input type="hidden" name="al_b2b_admin_action" value="newsletter_update_status" />
+									<input type="hidden" name="email" value="<?php echo esc_attr($email); ?>" />
+									<select name="status">
+										<?php foreach (array('subscribed', 'pending', 'unsubscribed', 'bounced', 'complained', 'invalid') as $option) : ?>
+											<option value="<?php echo esc_attr($option); ?>" <?php selected($status, $option); ?>>
+												<?php echo esc_html($option); ?>
+											</option>
+										<?php endforeach; ?>
+									</select>
+									<button type="submit" class="button">Update</button>
+								</form>
+								<form method="post" style="display:inline-block; margin-right:0.5rem;">
+									<?php wp_nonce_field(AL_B2B_ADMIN_NONCE_ACTION); ?>
+									<input type="hidden" name="al_b2b_admin_action" value="newsletter_resync" />
+									<input type="hidden" name="email" value="<?php echo esc_attr($email); ?>" />
+									<button type="submit" class="button button-secondary">Resync</button>
+								</form>
+								<form method="post" style="display:inline-block;" onsubmit="return confirm('Delete this subscriber record?');">
+									<?php wp_nonce_field(AL_B2B_ADMIN_NONCE_ACTION); ?>
+									<input type="hidden" name="al_b2b_admin_action" value="newsletter_delete" />
+									<input type="hidden" name="email" value="<?php echo esc_attr($email); ?>" />
+									<button type="submit" class="button">Delete</button>
+								</form>
+							</td>
+						</tr>
+					<?php endforeach; ?>
+				</tbody>
+			</table>
+		<?php endif; ?>
+
+		<h2 style="margin-top: 2rem;">Review Moderation</h2>
+		<p>Use WooCommerce native review tools at <a href="<?php echo esc_url(admin_url('edit-comments.php?comment_type=review')); ?>">Comments &rarr; Reviews</a>.</p>
 	</div>
 	<?php
 }
@@ -4246,6 +4507,7 @@ function al_b2b_submit_product_review($request) {
 		'comment_type' => 'review',
 		'comment_parent' => 0,
 		'user_id' => $user_id,
+		'comment_approved' => 1,
 		'comment_author_IP' => al_b2b_get_request_ip(),
 		'comment_agent' => al_b2b_get_request_user_agent(),
 	);
@@ -4258,25 +4520,10 @@ function al_b2b_submit_product_review($request) {
 	update_comment_meta($comment_id, 'rating', $rating);
 	update_comment_meta($comment_id, 'al_review_title', $title);
 
-	if (function_exists('wc_update_product_rating_counts')) {
-		wc_update_product_rating_counts($product_id);
-	}
-	if (function_exists('wc_update_product_review_count')) {
-		wc_update_product_review_count($product_id);
-	}
-	if (function_exists('wc_update_product_average_rating')) {
-		wc_update_product_average_rating($product_id);
-	}
-
-	$comment = get_comment($comment_id);
-	$pending = $comment ? ((string) $comment->comment_approved !== '1') : true;
-
 	return rest_ensure_response(array(
 		'ok' => true,
-		'pendingModeration' => $pending,
-		'message' => $pending
-			? 'Review submitted and awaiting moderation.'
-			: 'Review submitted successfully.',
+		'pendingModeration' => false,
+		'message' => 'Review submitted successfully.',
 	));
 }
 

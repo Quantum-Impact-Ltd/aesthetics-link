@@ -9,22 +9,6 @@ export type KeyIngredient = {
   desc: string;
 };
 
-export type ProductReview = {
-  id: string;
-  author: string;
-  rating: number;
-  date: string;
-  title: string;
-  body: string;
-  verified: boolean;
-};
-
-export type ReviewSummary = {
-  average: number;
-  count: number;
-  distribution: [number, number, number, number, number];
-};
-
 export type StorefrontBaseProduct = {
   wooId?: number;
   slug: string;
@@ -54,8 +38,6 @@ export type StorefrontBaseProduct = {
     texture: string;
   };
   accentBg: string;
-  reviewSummary?: ReviewSummary;
-  reviews?: ProductReview[];
 };
 
 export type StorefrontCatalogProduct = {

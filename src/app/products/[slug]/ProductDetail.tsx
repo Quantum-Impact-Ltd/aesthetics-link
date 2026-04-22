@@ -201,7 +201,7 @@ export default function ProductDetail({ product, related = [] }: { product: Stor
         author: user ? undefined : reviewForm.author,
         email: user ? undefined : reviewForm.email,
       }),
-    onSuccess: async (response) => {
+    onSuccess: (response) => {
       setReviewFeedback({
         tone: "success",
         message: response.message ?? "Review submitted successfully.",
@@ -211,7 +211,7 @@ export default function ProductDetail({ product, related = [] }: { product: Stor
         title: "",
         body: "",
       }));
-      await reviewsQuery.refetch();
+      void reviewsQuery.refetch();
     },
     onError: (error) => {
       setReviewFeedback({
@@ -396,18 +396,12 @@ export default function ProductDetail({ product, related = [] }: { product: Stor
     : displayRegularPrice;
 
   const reviewSummary = useMemo<StorefrontProductReviewsSummary | null>(() => {
-    if (reviewsQuery.data?.summary) {
-      return reviewsQuery.data.summary;
-    }
-    return product.reviewSummary ?? null;
-  }, [product.reviewSummary, reviewsQuery.data?.summary]);
+    return reviewsQuery.data?.summary ?? null;
+  }, [reviewsQuery.data?.summary]);
 
   const reviewItems = useMemo<StorefrontProductReview[]>(() => {
-    if (reviewsQuery.data?.reviews?.length) {
-      return reviewsQuery.data.reviews;
-    }
-    return (product.reviews as StorefrontProductReview[] | undefined) ?? [];
-  }, [product.reviews, reviewsQuery.data?.reviews]);
+    return reviewsQuery.data?.reviews ?? [];
+  }, [reviewsQuery.data?.reviews]);
 
   useEffect(() => {
     if (trackedViewRef.current) {
