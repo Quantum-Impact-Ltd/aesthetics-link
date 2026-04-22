@@ -149,7 +149,7 @@ export default function Header({ darkLogo = false }: { darkLogo?: boolean }) {
                   </div>
                   <div className="navbar-dropdown-divider" />
                   <div className="navbar-dropdown-col">
-                    <span className="navbar-dropdown-label superscript">By Concern</span>
+                    <span className="navbar-dropdown-label superscript">By Target Area</span>
                     <div className="navbar-dropdown-concerns">
                       {navigation.concerns.map((link) => (
                         <Link key={link.href} href={link.href} className="navbar-dropdown-link navbar-dropdown-link--sm" onClick={closeAll}>
@@ -168,7 +168,7 @@ export default function Header({ darkLogo = false }: { darkLogo?: boolean }) {
                         {formatNavLabel(link.label)}
                       </Link>
                     ))}
-                    <span className="navbar-accordion-sublabel superscript">By Concern</span>
+                    <span className="navbar-accordion-sublabel superscript">By Target Area</span>
                     {navigation.concerns.map((link) => (
                       <Link key={link.href} href={link.href} className="navbar-accordion-link navbar-accordion-link--sm" onClick={closeAll}>
                         {formatNavLabel(link.label)}

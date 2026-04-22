@@ -719,8 +719,8 @@ export default function ProductsClient({
               </h3>
 
               <div className="shop-sidebar__group">
-                <p className="shop-sidebar__group-label superscript">By Concern</p>
-                <ul className="shop-sidebar__list" role="group" aria-label="Filter products by concern">
+                <p className="shop-sidebar__group-label superscript">By Target Area</p>
+                <ul className="shop-sidebar__list" role="group" aria-label="Filter products by target area">
                   {concernOptions.map((concern) => (
                     <li key={concern.slug}>
                       <button
