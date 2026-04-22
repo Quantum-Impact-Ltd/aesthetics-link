@@ -502,6 +502,13 @@ export default function ProductDetail({ product, related = [] }: { product: Stor
   const handleSubmitReview = async (event: React.FormEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault();
     setReviewFeedback(null);
+    if (!product.wooId || product.wooId <= 0) {
+      setReviewFeedback({
+        tone: "error",
+        message: "Review submission is unavailable for this product.",
+      });
+      return;
+    }
     await submitReviewMutation.mutateAsync();
   };
 
@@ -595,6 +602,13 @@ export default function ProductDetail({ product, related = [] }: { product: Stor
                     ? "Adding..."
                     : "Add to Bag"}
             </button>
+            <a
+              href="#product-reviews"
+              className="product-back__link"
+              style={{ marginTop: "0.6rem", display: "inline-flex" }}
+            >
+              <p>Write a Review</p>
+            </a>
             {isOutOfStock ? (
               <p className="product-intro__stock-note" role="status" aria-live="polite">
                 {stockMessage}
@@ -772,9 +786,8 @@ export default function ProductDetail({ product, related = [] }: { product: Stor
         </section>
 
         {/* ── 6. REVIEWS ───────────────────────────────────────────── */}
-        {product.wooId ? (
-          <section id="product-reviews" className="reveal-up" data-reveal>
-            <div className="container">
+        <section id="product-reviews" className="reveal-up" data-reveal>
+          <div className="container">
               <div className="reviews__head">
                 <h2 className="reviews__title">Customer <span className="font-serif">Reviews</span></h2>
               </div>
@@ -900,6 +913,11 @@ export default function ProductDetail({ product, related = [] }: { product: Stor
                 <button type="submit" className="btn product-intro__cta" style={{ marginTop: "1rem" }} disabled={submitReviewMutation.isPending}>
                   {submitReviewMutation.isPending ? "Submitting..." : "Submit Review"}
                 </button>
+                {!product.wooId ? (
+                  <p style={{ marginTop: "0.6rem", color: "#b04545" }}>
+                    Reviews are currently unavailable for this product.
+                  </p>
+                ) : null}
                 {reviewsQuery.isFetching ? (
                   <p style={{ marginTop: "0.6rem", color: "var(--color-gray2)" }}>Refreshing reviews…</p>
                 ) : null}
@@ -909,9 +927,8 @@ export default function ProductDetail({ product, related = [] }: { product: Stor
                   </p>
                 ) : null}
               </form>
-            </div>
-          </section>
-        ) : null}
+          </div>
+        </section>
 
         {/* ── 7. RELATED PRODUCTS ──────────────────────────────────── */}
         {related.length > 0 ? (
