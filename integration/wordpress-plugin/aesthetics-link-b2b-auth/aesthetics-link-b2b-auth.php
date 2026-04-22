@@ -12,6 +12,7 @@ if (!defined('ABSPATH')) {
 
 defined('AL_B2B_SESSION_TABLE')              || define('AL_B2B_SESSION_TABLE',              'al_b2b_sessions');
 defined('AL_B2B_AUDIT_TABLE')                || define('AL_B2B_AUDIT_TABLE',                'al_b2b_audit_log');
+defined('AL_B2B_NEWSLETTER_TABLE')           || define('AL_B2B_NEWSLETTER_TABLE',           'al_b2b_newsletter_subscribers');
 defined('AL_B2B_CLEANUP_EVENT')              || define('AL_B2B_CLEANUP_EVENT',              'al_b2b_cleanup_sessions_event');
 
 defined('AL_B2B_ACCOUNT_TYPE_META')          || define('AL_B2B_ACCOUNT_TYPE_META',          'al_account_type');
@@ -94,12 +95,18 @@ function al_b2b_get_audit_table_name() {
 	return $wpdb->prefix . AL_B2B_AUDIT_TABLE;
 }
 
+function al_b2b_get_newsletter_table_name() {
+	global $wpdb;
+	return $wpdb->prefix . AL_B2B_NEWSLETTER_TABLE;
+}
+
 function al_b2b_create_tables() {
 	global $wpdb;
 
 	$charset_collate = $wpdb->get_charset_collate();
 	$sessions_table = al_b2b_get_sessions_table_name();
 	$audit_table = al_b2b_get_audit_table_name();
+	$newsletter_table = al_b2b_get_newsletter_table_name();
 
 	require_once ABSPATH . 'wp-admin/includes/upgrade.php';
 
@@ -129,8 +136,24 @@ function al_b2b_create_tables() {
 		KEY created_at (created_at)
 	) {$charset_collate};";
 
+	$sql_newsletter = "CREATE TABLE {$newsletter_table} (
+		id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+		email VARCHAR(190) NOT NULL,
+		source VARCHAR(64) NOT NULL DEFAULT 'footer',
+		status VARCHAR(32) NOT NULL DEFAULT 'subscribed',
+		subscribed_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		ip_address VARCHAR(64) NOT NULL DEFAULT '',
+		user_agent VARCHAR(255) NOT NULL DEFAULT '',
+		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+		PRIMARY KEY (id),
+		UNIQUE KEY email (email),
+		KEY subscribed_at (subscribed_at)
+	) {$charset_collate};";
+
 	dbDelta($sql_sessions);
 	dbDelta($sql_audit);
+	dbDelta($sql_newsletter);
 }
 
 function al_b2b_cleanup_expired_sessions() {
@@ -167,6 +190,20 @@ function al_b2b_get_request_ip() {
 	}
 
 	return '';
+}
+
+function al_b2b_get_request_user_agent() {
+	$raw = isset($_SERVER['HTTP_USER_AGENT']) ? (string) wp_unslash($_SERVER['HTTP_USER_AGENT']) : '';
+	$raw = trim($raw);
+
+	if ($raw === '') {
+		return '';
+	}
+
+	$normalized = preg_replace('/\s+/', ' ', $raw);
+	$normalized = is_string($normalized) ? trim($normalized) : $raw;
+
+	return substr($normalized, 0, 255);
 }
 
 function al_b2b_guard_rate_limit($scope, $max_attempts, $window_seconds) {
@@ -207,6 +244,31 @@ function al_b2b_get_turnstile_secret() {
 function al_b2b_get_checkout_bridge_secret() {
 	if (defined('AL_B2B_CHECKOUT_BRIDGE_SECRET') && AL_B2B_CHECKOUT_BRIDGE_SECRET) {
 		return trim((string) AL_B2B_CHECKOUT_BRIDGE_SECRET);
+	}
+
+	return '';
+}
+
+function al_b2b_get_brevo_api_key() {
+	if (defined('AL_B2B_BREVO_API_KEY') && AL_B2B_BREVO_API_KEY) {
+		return trim((string) AL_B2B_BREVO_API_KEY);
+	}
+
+	return '';
+}
+
+function al_b2b_get_brevo_list_id() {
+	if (defined('AL_B2B_BREVO_LIST_ID') && AL_B2B_BREVO_LIST_ID) {
+		$list_id = (int) AL_B2B_BREVO_LIST_ID;
+		return $list_id > 0 ? $list_id : 0;
+	}
+
+	return 0;
+}
+
+function al_b2b_get_brevo_webhook_secret() {
+	if (defined('AL_B2B_BREVO_WEBHOOK_SECRET') && AL_B2B_BREVO_WEBHOOK_SECRET) {
+		return trim((string) AL_B2B_BREVO_WEBHOOK_SECRET);
 	}
 
 	return '';
@@ -2866,6 +2928,18 @@ function al_b2b_register_routes() {
 		'callback' => 'al_b2b_get_order_confirmation',
 		'permission_callback' => '__return_true',
 	));
+
+	register_rest_route('aesthetics-link/v1', '/newsletter/subscribe', array(
+		'methods' => 'POST',
+		'callback' => 'al_b2b_subscribe_newsletter',
+		'permission_callback' => '__return_true',
+	));
+
+	register_rest_route('aesthetics-link/v1', '/newsletter/webhook', array(
+		'methods' => 'POST',
+		'callback' => 'al_b2b_handle_brevo_webhook',
+		'permission_callback' => '__return_true',
+	));
 }
 
 function al_b2b_register_user($request) {
@@ -3159,6 +3233,241 @@ function al_b2b_reset_password($request) {
 	return rest_ensure_response(array(
 		'ok' => true,
 		'message' => 'Password reset successfully. Please sign in with your new password.',
+	));
+}
+
+function al_b2b_normalize_newsletter_status($status) {
+	$status = sanitize_key((string) $status);
+	$allowed = array(
+		'pending',
+		'subscribed',
+		'unsubscribed',
+		'bounced',
+		'complained',
+		'invalid',
+	);
+
+	if (!in_array($status, $allowed, true)) {
+		return 'subscribed';
+	}
+
+	return $status;
+}
+
+function al_b2b_upsert_newsletter_subscriber($email, $source, $status = 'subscribed') {
+	global $wpdb;
+
+	$email = sanitize_email((string) $email);
+	if (!$email || !is_email($email)) {
+		return false;
+	}
+
+	$source = sanitize_key((string) $source);
+	if (!$source) {
+		$source = 'footer';
+	}
+
+	$status = al_b2b_normalize_newsletter_status($status);
+	$table = al_b2b_get_newsletter_table_name();
+	$now = gmdate('Y-m-d H:i:s');
+
+	$payload = array(
+		'email' => strtolower($email),
+		'source' => $source,
+		'status' => $status,
+		'ip_address' => al_b2b_get_request_ip(),
+		'user_agent' => al_b2b_get_request_user_agent(),
+		'updated_at' => $now,
+	);
+
+	if ($status === 'subscribed') {
+		$payload['subscribed_at'] = $now;
+	}
+
+	$formats = array_fill(0, count($payload), '%s');
+	$inserted = $wpdb->replace( // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery
+		$table,
+		$payload,
+		$formats
+	);
+
+	return $inserted !== false;
+}
+
+function al_b2b_sync_newsletter_to_brevo($email, $source) {
+	$api_key = al_b2b_get_brevo_api_key();
+	$list_id = al_b2b_get_brevo_list_id();
+
+	if (!$api_key || $list_id <= 0) {
+		return array(
+			'ok' => false,
+			'configured' => false,
+			'message' => 'Brevo API key or list id is not configured.',
+		);
+	}
+
+	$payload = array(
+		'email' => (string) $email,
+		'listIds' => array($list_id),
+		'updateEnabled' => true,
+		'attributes' => array(
+			'SOURCE' => strtoupper((string) $source),
+		),
+	);
+
+	$response = wp_remote_post(
+		'https://api.brevo.com/v3/contacts',
+		array(
+			'timeout' => 15,
+			'headers' => array(
+				'Accept' => 'application/json',
+				'Content-Type' => 'application/json',
+				'api-key' => $api_key,
+			),
+			'body' => wp_json_encode($payload),
+		)
+	);
+
+	if (is_wp_error($response)) {
+		return array(
+			'ok' => false,
+			'configured' => true,
+			'message' => $response->get_error_message(),
+		);
+	}
+
+	$status_code = (int) wp_remote_retrieve_response_code($response);
+	if ($status_code >= 200 && $status_code < 300) {
+		return array(
+			'ok' => true,
+			'configured' => true,
+			'message' => '',
+		);
+	}
+
+	$raw_body = wp_remote_retrieve_body($response);
+	$decoded = json_decode((string) $raw_body, true);
+	$error_message = is_array($decoded) && !empty($decoded['message']) ? (string) $decoded['message'] : '';
+
+	return array(
+		'ok' => false,
+		'configured' => true,
+		'message' => $error_message ? $error_message : 'Brevo contact sync failed.',
+	);
+}
+
+function al_b2b_subscribe_newsletter($request) {
+	$limit = al_b2b_guard_rate_limit('newsletter_subscribe', 20, 15 * MINUTE_IN_SECONDS);
+	if (is_wp_error($limit)) {
+		return $limit;
+	}
+
+	$body = al_b2b_get_json_body($request);
+	$email = isset($body['email']) ? sanitize_email((string) $body['email']) : '';
+	$source = isset($body['source']) ? sanitize_key((string) $body['source']) : 'footer';
+
+	if (!$email || !is_email($email)) {
+		return new WP_Error('invalid_email', 'A valid email address is required.', array('status' => 400));
+	}
+
+	$saved = al_b2b_upsert_newsletter_subscriber($email, $source, 'subscribed');
+	if (!$saved) {
+		return new WP_Error('newsletter_save_failed', 'Unable to save newsletter subscription.', array('status' => 500));
+	}
+
+	$brevo_sync = al_b2b_sync_newsletter_to_brevo($email, $source);
+
+	return rest_ensure_response(array(
+		'ok' => true,
+		'message' => 'You are subscribed to our newsletter.',
+		'brevoSynced' => !empty($brevo_sync['ok']),
+		'brevoConfigured' => !empty($brevo_sync['configured']),
+	));
+}
+
+function al_b2b_validate_brevo_webhook_request($request) {
+	$secret = al_b2b_get_brevo_webhook_secret();
+	if (!$secret) {
+		return true;
+	}
+
+	$provided = trim((string) $request->get_header('x-al-brevo-secret'));
+	if (!$provided) {
+		$provided = isset($_GET['secret']) // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+			? sanitize_text_field(wp_unslash($_GET['secret'])) // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+			: '';
+	}
+
+	if (!$provided || !hash_equals($secret, $provided)) {
+		return new WP_Error('forbidden', 'Invalid webhook secret.', array('status' => 403));
+	}
+
+	return true;
+}
+
+function al_b2b_map_brevo_event_to_status($event) {
+	$event = sanitize_key((string) $event);
+
+	if (in_array($event, array('unsubscribe', 'unsubscribed'), true)) {
+		return 'unsubscribed';
+	}
+	if (in_array($event, array('hard_bounce', 'soft_bounce', 'bounce'), true)) {
+		return 'bounced';
+	}
+	if (in_array($event, array('spam', 'complaint'), true)) {
+		return 'complained';
+	}
+	if (in_array($event, array('invalid_email', 'blocked', 'error'), true)) {
+		return 'invalid';
+	}
+	if (in_array($event, array('add_contact', 'create_contact', 'update_contact', 'subscribed'), true)) {
+		return 'subscribed';
+	}
+
+	return '';
+}
+
+function al_b2b_handle_single_brevo_webhook_event($item) {
+	if (!is_array($item)) {
+		return false;
+	}
+
+	$email = isset($item['email']) ? sanitize_email((string) $item['email']) : '';
+	$event = isset($item['event']) ? (string) $item['event'] : '';
+	$status = al_b2b_map_brevo_event_to_status($event);
+
+	if (!$email || !is_email($email) || !$status) {
+		return false;
+	}
+
+	return al_b2b_upsert_newsletter_subscriber($email, 'brevo_webhook', $status);
+}
+
+function al_b2b_handle_brevo_webhook($request) {
+	$validation = al_b2b_validate_brevo_webhook_request($request);
+	if (is_wp_error($validation)) {
+		return $validation;
+	}
+
+	$body = $request->get_json_params();
+	if (is_array($body) && array_key_exists(0, $body)) {
+		$events = $body;
+	} elseif (is_array($body)) {
+		$events = array($body);
+	} else {
+		$events = array();
+	}
+
+	$handled = 0;
+	foreach ($events as $event) {
+		if (al_b2b_handle_single_brevo_webhook_event($event)) {
+			$handled += 1;
+		}
+	}
+
+	return rest_ensure_response(array(
+		'ok' => true,
+		'handled' => $handled,
 	));
 }
 

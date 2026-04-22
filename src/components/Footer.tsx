@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import { FormEvent, useState } from "react";
 import { useParallax } from "@/hooks/useParallax";
 import AestheticsLinkWordmark from "@/components/AestheticsLinkWordmark";
 
@@ -15,6 +16,54 @@ function ArrowLongIcon() {
 
 export default function Footer() {
   const footerImgRef = useParallax<HTMLImageElement>(0.1);
+  const [email, setEmail] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [status, setStatus] = useState<{ tone: "success" | "error"; message: string } | null>(null);
+
+  const handleSubscribe = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
+    event.preventDefault();
+
+    const normalizedEmail = email.trim();
+    if (!normalizedEmail) {
+      setStatus({ tone: "error", message: "Please enter a valid email address." });
+      return;
+    }
+
+    setIsSubmitting(true);
+    setStatus(null);
+
+    try {
+      const response = await fetch("/api/newsletter/subscribe", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        body: JSON.stringify({
+          email: normalizedEmail,
+          source: "footer",
+        }),
+      });
+
+      const payload = (await response.json().catch(() => null)) as { message?: string } | null;
+      if (!response.ok) {
+        throw new Error(payload?.message || "Unable to subscribe right now. Please try again.");
+      }
+
+      setStatus({
+        tone: "success",
+        message: payload?.message || "Subscribed. Please check your inbox for confirmation.",
+      });
+      setEmail("");
+    } catch (error) {
+      setStatus({
+        tone: "error",
+        message: error instanceof Error ? error.message : "Unable to subscribe right now. Please try again.",
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   return (
     <footer id="footer" className="reveal-up" data-reveal>
@@ -74,10 +123,12 @@ export default function Footer() {
               <p className="maxwidth-0 text-gray2">
                 Stay linked to the latest in aesthetic science and new launches.
               </p>
-              <form onSubmit={(e) => e.preventDefault()}>
+              <form onSubmit={handleSubscribe}>
                 <input
                   type="email"
                   name="contact[email]"
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
                   autoCorrect="off"
                   autoCapitalize="off"
                   autoComplete="email"
@@ -85,13 +136,25 @@ export default function Footer() {
                   aria-label="Your email address"
                   required
                 />
-                <button className="footer__submit flex-center flex-column" type="submit">
+                <button className="footer__submit flex-center flex-column" type="submit" disabled={isSubmitting}>
                   <div className="arrowlong">
                     <ArrowLongIcon />
                   </div>
-                  <span className="text-underline mt-3 text-uppercase text-gray2">Subscribe</span>
+                  <span className="text-underline mt-3 text-uppercase text-gray2">
+                    {isSubmitting ? "Submitting..." : "Subscribe"}
+                  </span>
                 </button>
               </form>
+              {status ? (
+                <p
+                  className="font-small"
+                  role="status"
+                  aria-live="polite"
+                  style={{ color: status.tone === "success" ? "#cde6cf" : "#ffd6d6", marginTop: "0.8rem" }}
+                >
+                  {status.message}
+                </p>
+              ) : null}
               <div className="border" />
               <p className="text-gray3 font-small maxwidth-0">
                 No spam, only quality articles to help you look more radiant. You can opt out anytime.

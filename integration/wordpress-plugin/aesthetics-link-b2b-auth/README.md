@@ -11,6 +11,8 @@ This plugin exposes custom WordPress REST endpoints for the Next.js frontend aut
 - `POST /wp-json/aesthetics-link/v1/auth/request-password-reset`
 - `POST /wp-json/aesthetics-link/v1/auth/reset-password`
 - `GET /wp-json/aesthetics-link/v1/auth/wholesale-prices?ids=1,2,3`
+- `POST /wp-json/aesthetics-link/v1/newsletter/subscribe`
+- `POST /wp-json/aesthetics-link/v1/newsletter/webhook`
 
 It also creates roles:
 
@@ -97,11 +99,24 @@ The plugin supports a signed checkout bridge query handled on `template_redirect
 define('AL_B2B_FRONTEND_URL', 'https://www.yourdomain.com');
 define('AL_B2B_TURNSTILE_SECRET', 'your-cloudflare-turnstile-secret');
 define('AL_B2B_CHECKOUT_BRIDGE_SECRET', 'same-value-as-WOOCOMMERCE_CHECKOUT_BRIDGE_SECRET');
+define('AL_B2B_BREVO_API_KEY', 'your-brevo-api-key');
+define('AL_B2B_BREVO_LIST_ID', 2);
+define('AL_B2B_BREVO_WEBHOOK_SECRET', 'shared-secret-for-brevo-webhook');
 ```
 
 - `AL_B2B_FRONTEND_URL` controls where verification/reset links point.
 - `AL_B2B_TURNSTILE_SECRET` enables CAPTCHA validation on auth endpoints.
 - `AL_B2B_CHECKOUT_BRIDGE_SECRET` must match frontend `WOOCOMMERCE_CHECKOUT_BRIDGE_SECRET`.
+- `AL_B2B_BREVO_API_KEY` and `AL_B2B_BREVO_LIST_ID` enable contact sync to Brevo.
+- `AL_B2B_BREVO_WEBHOOK_SECRET` secures the newsletter webhook endpoint.
+
+## Newsletter + Brevo flow
+
+1. Footer submits email to Next API route `/api/newsletter/subscribe`.
+2. Next route forwards to WP endpoint `/wp-json/aesthetics-link/v1/newsletter/subscribe`.
+3. WP stores subscriber in `wp_al_b2b_newsletter_subscribers`.
+4. WP syncs contact to Brevo list (`updateEnabled=true`, source tag included).
+5. Brevo webhook calls `/wp-json/aesthetics-link/v1/newsletter/webhook` to keep local status in sync (unsubscribe/bounce/etc).
 
 ## Notes
 

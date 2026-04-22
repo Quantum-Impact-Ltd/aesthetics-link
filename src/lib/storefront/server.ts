@@ -604,6 +604,54 @@ function toUniqueLinks(entries: StorefrontNavLink[]): StorefrontNavLink[] {
   return Array.from(deduped.values());
 }
 
+function parseBrandPriorityOrder(): string[] {
+  const raw = process.env.STOREFRONT_BRAND_ORDER ?? "";
+  if (!raw.trim()) {
+    return [];
+  }
+
+  return raw
+    .split(",")
+    .map((entry) => slugify(entry))
+    .filter(Boolean);
+}
+
+function getBrandSlugFromHref(href: string): string {
+  try {
+    const url = new URL(href, "https://storefront.local");
+    return slugify(url.searchParams.get("brand") ?? "");
+  } catch {
+    return "";
+  }
+}
+
+function applyBrandPriorityOrder(entries: StorefrontNavLink[]): StorefrontNavLink[] {
+  const priorityOrder = parseBrandPriorityOrder();
+  if (priorityOrder.length === 0) {
+    return entries;
+  }
+
+  const rankBySlug = new Map<string, number>();
+  priorityOrder.forEach((slug, index) => {
+    if (!rankBySlug.has(slug)) {
+      rankBySlug.set(slug, index);
+    }
+  });
+
+  return [...entries].sort((left, right) => {
+    const leftSlug = getBrandSlugFromHref(left.href);
+    const rightSlug = getBrandSlugFromHref(right.href);
+    const leftRank = rankBySlug.has(leftSlug) ? rankBySlug.get(leftSlug)! : Number.MAX_SAFE_INTEGER;
+    const rightRank = rankBySlug.has(rightSlug) ? rankBySlug.get(rightSlug)! : Number.MAX_SAFE_INTEGER;
+
+    if (leftRank !== rightRank) {
+      return leftRank - rightRank;
+    }
+
+    return left.label.localeCompare(right.label, undefined, { sensitivity: "base" });
+  });
+}
+
 function isDescendantOfRoot(
   categoryId: number,
   rootIds: Set<number>,
@@ -829,7 +877,7 @@ export async function getStorefrontNavigation(): Promise<StorefrontNavigation> {
         }));
     }
 
-    const uniqueBrands = toUniqueLinks(brands);
+    const uniqueBrands = applyBrandPriorityOrder(toUniqueLinks(brands));
 
     return {
       top: DEFAULT_NAV_TOP,
