@@ -5,12 +5,16 @@ import { getWooStoreBaseUrl } from "@/lib/storefront/config";
 type SubscribePayload = {
   email?: string;
   source?: string;
+  customerType?: string;
+  region?: string;
 };
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
   const body = (await request.json().catch(() => null)) as SubscribePayload | null;
   const email = typeof body?.email === "string" ? body.email.trim() : "";
   const source = typeof body?.source === "string" ? body.source.trim() : "footer";
+  const customerType = typeof body?.customerType === "string" ? body.customerType.trim() : "";
+  const region = typeof body?.region === "string" ? body.region.trim() : "";
 
   if (!email) {
     return NextResponse.json({ message: "Email is required." }, { status: 400 });
@@ -31,7 +35,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         Accept: "application/json",
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ email, source }),
+      body: JSON.stringify({ email, source, customerType, region }),
       cache: "no-store",
     });
   } catch {

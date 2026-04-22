@@ -10,6 +10,8 @@ import { useStorefrontNavigation } from "@/components/StorefrontNavigationProvid
 import { getWholesalePrices } from "@/lib/auth/client";
 import { useAuth } from "@/components/AuthProvider";
 import { decodeEntities } from "@/lib/utils/text";
+import { trackMarketingEvent } from "@/lib/marketing/client";
+import { resolveMarketingCustomerType, resolveMarketingRegion } from "@/lib/marketing/context";
 import {
   addCartItem,
   fetchCart,
@@ -294,6 +296,19 @@ export default function ProductsClient({
   );
 
   const { user } = useAuth();
+  const trackedCategoryViews = useRef<Set<string>>(new Set());
+
+  const marketingContext = useMemo(
+    () => ({
+      customerType: resolveMarketingCustomerType(user),
+      region: resolveMarketingRegion(
+        user,
+        typeof navigator !== "undefined" ? navigator.language : "",
+      ),
+      email: user?.email ?? "",
+    }),
+    [user],
+  );
 
   const isWholesaleViewer = Boolean(
     user &&
@@ -588,8 +603,31 @@ export default function ProductsClient({
           ? concernFiltered
           : (() => {
               const brandSet = new Set(brandFiltered.map((product) => product.slug));
-              return concernFiltered.filter((product) => brandSet.has(product.slug));
-            })();
+            return concernFiltered.filter((product) => brandSet.has(product.slug));
+          })();
+
+  useEffect(() => {
+    const concern = normalizeFilterSlug(activeConcern) || "all";
+    const brand = normalizeFilterSlug(activeBrand) || "all";
+    const eventKey = `${concern}:${brand}:${filtered.length}`;
+    if (trackedCategoryViews.current.has(eventKey)) {
+      return;
+    }
+
+    trackedCategoryViews.current.add(eventKey);
+    void trackMarketingEvent({
+      event: "category_viewed",
+      email: marketingContext.email,
+      source: "products_grid",
+      customerType: marketingContext.customerType,
+      region: marketingContext.region,
+      payload: {
+        concern,
+        brand,
+        productCount: filtered.length,
+      },
+    });
+  }, [activeBrand, activeConcern, filtered.length, marketingContext]);
 
   const syncFiltersToUrl = (nextConcern: string, nextBrand: string): void => {
     if (typeof window === "undefined") {
@@ -647,6 +685,20 @@ export default function ProductsClient({
   async function handleAddToCart(product: StorefrontCatalogProduct): Promise<void> {
     setCartOpen(true);
     await addCartMutation.mutateAsync({ product });
+    void trackMarketingEvent({
+      event: "added_to_cart",
+      email: marketingContext.email,
+      source: "products_grid",
+      customerType: marketingContext.customerType,
+      region: marketingContext.region,
+      payload: {
+        productId: product.id,
+        productSlug: product.slug,
+        productName: product.name,
+        concern: normalizeFilterSlug(activeConcern) || "all",
+        brand: normalizeFilterSlug(activeBrand) || "all",
+      },
+    });
   }
 
   async function handleRemoveFromCart(key: string): Promise<void> {

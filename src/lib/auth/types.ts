@@ -67,6 +67,7 @@ export type RegisterPayload = {
   email: string;
   password: string;
   accountType: AccountType;
+  marketingOptIn?: boolean;
   businessInfo?: BusinessInfo;
   captchaToken?: string;
 };

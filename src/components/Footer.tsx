@@ -5,6 +5,8 @@ import Link from "next/link";
 import { FormEvent, useState } from "react";
 import { useParallax } from "@/hooks/useParallax";
 import AestheticsLinkWordmark from "@/components/AestheticsLinkWordmark";
+import { useAuth } from "@/components/AuthProvider";
+import { resolveMarketingCustomerType, resolveMarketingRegion } from "@/lib/marketing/context";
 
 function ArrowLongIcon() {
   return (
@@ -16,6 +18,7 @@ function ArrowLongIcon() {
 
 export default function Footer() {
   const footerImgRef = useParallax<HTMLImageElement>(0.1);
+  const { user } = useAuth();
   const [email, setEmail] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [status, setStatus] = useState<{ tone: "success" | "error"; message: string } | null>(null);
@@ -42,6 +45,11 @@ export default function Footer() {
         body: JSON.stringify({
           email: normalizedEmail,
           source: "footer",
+          customerType: resolveMarketingCustomerType(user),
+          region: resolveMarketingRegion(
+            user,
+            typeof navigator !== "undefined" ? navigator.language : "",
+          ),
         }),
       });
 

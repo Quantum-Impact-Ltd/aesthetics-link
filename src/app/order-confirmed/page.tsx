@@ -2,6 +2,7 @@ import Link from "next/link";
 import { cookies } from "next/headers";
 
 import CheckoutCompletionCartReset from "@/components/CheckoutCompletionCartReset";
+import OrderCompletionMarketing from "@/components/OrderCompletionMarketing";
 import { getOrderConfirmation } from "@/lib/storefront/server";
 import type { StorefrontOrderAddress, StorefrontOrderConfirmation } from "@/lib/storefront/types";
 
@@ -214,6 +215,14 @@ function OrderReceipt({ order }: { order: StorefrontOrderConfirmation }) {
           </div>
         </div>
       </section>
+
+      <OrderCompletionMarketing
+        orderId={order.orderId}
+        orderNumber={order.orderNumber}
+        itemCount={order.itemCount}
+        total={order.totals.total}
+        billingEmail={order.billingAddress.email ?? ""}
+      />
     </article>
   );
 }

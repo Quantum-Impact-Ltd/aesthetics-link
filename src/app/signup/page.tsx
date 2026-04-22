@@ -42,6 +42,7 @@ export default function SignUp() {
   const [accountType, setAccountType] = useState<AccountType>("retail");
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const [marketingOptIn, setMarketingOptIn] = useState(false);
 
   function update<K extends keyof FormState>(key: K, value: FormState[K]): void {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -68,6 +69,7 @@ export default function SignUp() {
       email: form.email,
       password: form.password,
       accountType,
+      marketingOptIn,
       businessInfo:
         accountType === "clinic"
           ? {
@@ -307,6 +309,25 @@ export default function SignUp() {
               ) : null}
 
               <CaptchaField onTokenChange={setCaptchaToken} />
+
+              <label
+                style={{
+                  display: "flex",
+                  alignItems: "flex-start",
+                  gap: "0.6rem",
+                  color: "var(--color-gray2)",
+                  fontSize: "0.86rem",
+                  lineHeight: 1.45,
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={marketingOptIn}
+                  onChange={(event) => setMarketingOptIn(event.target.checked)}
+                  style={{ accentColor: "var(--color-text)", marginTop: "0.15rem" }}
+                />
+                <span>Email me product updates, offers, and educational content.</span>
+              </label>
 
               <button type="submit" className="auth-submit" disabled={loading}>
                 {loading ? "Creating account..." : accountType === "clinic" ? "Submit Application" : "Create Account"}

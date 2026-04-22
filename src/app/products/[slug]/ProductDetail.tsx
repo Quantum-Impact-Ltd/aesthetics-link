@@ -11,6 +11,8 @@ import CartSidebar from "@/components/CartSidebar";
 import { getWholesalePrices } from "@/lib/auth/client";
 import { useAuth } from "@/components/AuthProvider";
 import { decodeEntities } from "@/lib/utils/text";
+import { trackMarketingEvent } from "@/lib/marketing/client";
+import { resolveMarketingCustomerType, resolveMarketingRegion } from "@/lib/marketing/context";
 import {
   addCartItem,
   addVariableCartItem,
@@ -23,7 +25,7 @@ import type {
   StorefrontDetailProduct,
   StorefrontVariationAttribute,
 } from "@/lib/storefront/types";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 const EMPTY_CART: StorefrontCart = {
   items: [],
@@ -216,6 +218,19 @@ export default function ProductDetail({ product }: { product: StorefrontDetailPr
   const stockMessage = product.stockMessage || "This product is currently out of stock and unavailable.";
 
   const { user } = useAuth();
+  const trackedViewRef = useRef(false);
+
+  const marketingContext = useMemo(
+    () => ({
+      customerType: resolveMarketingCustomerType(user),
+      region: resolveMarketingRegion(
+        user,
+        typeof navigator !== "undefined" ? navigator.language : "",
+      ),
+      email: user?.email ?? "",
+    }),
+    [user],
+  );
 
   const isWholesaleViewer = Boolean(
     user &&
@@ -318,6 +333,27 @@ export default function ProductDetail({ product }: { product: StorefrontDetailPr
     ? selectedVariation.regularPrice ?? null
     : displayRegularPrice;
 
+  useEffect(() => {
+    if (trackedViewRef.current) {
+      return;
+    }
+
+    trackedViewRef.current = true;
+    void trackMarketingEvent({
+      event: "viewed_product",
+      email: marketingContext.email,
+      source: "product_detail",
+      customerType: marketingContext.customerType,
+      region: marketingContext.region,
+      payload: {
+        productId: product.wooId,
+        productSlug: product.slug,
+        productName: product.name,
+        productType: product.productType ?? "simple",
+      },
+    });
+  }, [marketingContext, product.name, product.productType, product.slug, product.wooId]);
+
   const handleAddToBag = async () => {
     if (!product.wooId || adding || isOutOfStock) {
       return;
@@ -360,6 +396,20 @@ export default function ProductDetail({ product }: { product: StorefrontDetailPr
       // Refresh cart cache so Header count updates and sidebar shows current state
       const freshCart = await fetchCart();
       queryClient.setQueryData(["storefront", "cart"], freshCart);
+      void trackMarketingEvent({
+        event: "added_to_cart",
+        email: marketingContext.email,
+        source: "product_detail",
+        customerType: marketingContext.customerType,
+        region: marketingContext.region,
+        payload: {
+          productId: product.wooId,
+          productSlug: product.slug,
+          productName: product.name,
+          isVariable: isVariableProduct,
+          variationId: selectedVariation?.id ?? 0,
+        },
+      });
       setAddStatus({ tone: "success", message: "Added to bag" });
       setCartOpen(true);
     } catch (error) {

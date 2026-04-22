@@ -10,6 +10,9 @@ import {
   removeCartItem,
   updateCartItemQuantity,
 } from "@/lib/storefront/client";
+import { useAuth } from "@/components/AuthProvider";
+import { trackMarketingEvent } from "@/lib/marketing/client";
+import { resolveMarketingCustomerType, resolveMarketingRegion } from "@/lib/marketing/context";
 import type { StorefrontCart } from "@/lib/storefront/types";
 import Image from "next/image";
 import Link from "next/link";
@@ -28,6 +31,7 @@ const EMPTY_CART: StorefrontCart = {
 
 export default function CartPage() {
   const queryClient = useQueryClient();
+  const { user } = useAuth();
   const [initialCachedCart] = useState<StorefrontCart | null>(() => getCachedCartSnapshot());
   const [error, setError] = useState<string | null>(null);
   const [redirectingToCheckout, setRedirectingToCheckout] = useState(false);
@@ -178,6 +182,22 @@ export default function CartPage() {
 
     setRedirectingToCheckout(true);
     setError(null);
+
+    void trackMarketingEvent({
+      event: "started_checkout",
+      email: user?.email ?? "",
+      source: "cart_page",
+      customerType: resolveMarketingCustomerType(user),
+      region: resolveMarketingRegion(
+        user,
+        typeof navigator !== "undefined" ? navigator.language : "",
+      ),
+      payload: {
+        itemCount: cart.itemCount,
+        subtotal: cart.subtotal,
+        total: cart.total,
+      },
+    });
 
     try {
       window.location.assign("/api/checkout/bridge");

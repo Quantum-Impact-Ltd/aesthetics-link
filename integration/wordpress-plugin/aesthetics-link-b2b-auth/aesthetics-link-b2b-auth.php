@@ -13,7 +13,9 @@ if (!defined('ABSPATH')) {
 defined('AL_B2B_SESSION_TABLE')              || define('AL_B2B_SESSION_TABLE',              'al_b2b_sessions');
 defined('AL_B2B_AUDIT_TABLE')                || define('AL_B2B_AUDIT_TABLE',                'al_b2b_audit_log');
 defined('AL_B2B_NEWSLETTER_TABLE')           || define('AL_B2B_NEWSLETTER_TABLE',           'al_b2b_newsletter_subscribers');
+defined('AL_B2B_MARKETING_EVENT_TABLE')      || define('AL_B2B_MARKETING_EVENT_TABLE',      'al_b2b_marketing_events');
 defined('AL_B2B_CLEANUP_EVENT')              || define('AL_B2B_CLEANUP_EVENT',              'al_b2b_cleanup_sessions_event');
+defined('AL_B2B_INACTIVE_EVENT')             || define('AL_B2B_INACTIVE_EVENT',             'al_b2b_mark_inactive_contacts_event');
 
 defined('AL_B2B_ACCOUNT_TYPE_META')          || define('AL_B2B_ACCOUNT_TYPE_META',          'al_account_type');
 defined('AL_B2B_CLINIC_STATUS_META')         || define('AL_B2B_CLINIC_STATUS_META',         'al_clinic_status');
@@ -39,6 +41,7 @@ add_action('admin_menu', 'al_b2b_register_admin_menu');
 add_action('admin_init', 'al_b2b_handle_admin_actions');
 add_action('rest_api_init', 'al_b2b_register_routes');
 add_action(AL_B2B_CLEANUP_EVENT, 'al_b2b_cleanup_expired_sessions');
+add_action(AL_B2B_INACTIVE_EVENT, 'al_b2b_mark_inactive_contacts');
 add_filter('allowed_redirect_hosts', 'al_b2b_allow_frontend_redirect_host');
 add_filter('woocommerce_get_return_url', 'al_b2b_override_return_url', 10, 2);
 add_filter('determine_current_user', 'al_b2b_determine_current_user_for_store_api', 25);
@@ -56,6 +59,9 @@ add_action('product_cat_add_form_fields', 'al_b2b_render_product_cat_wholesale_a
 add_action('product_cat_edit_form_fields', 'al_b2b_render_product_cat_wholesale_edit_fields', 10, 1);
 add_action('created_product_cat', 'al_b2b_save_product_cat_wholesale_fields', 10, 1);
 add_action('edited_product_cat', 'al_b2b_save_product_cat_wholesale_fields', 10, 1);
+add_action('woocommerce_after_checkout_billing_form', 'al_b2b_render_checkout_newsletter_optin');
+add_action('woocommerce_checkout_create_order', 'al_b2b_capture_checkout_newsletter_optin', 10, 2);
+add_action('woocommerce_checkout_order_processed', 'al_b2b_subscribe_checkout_newsletter_optin', 10, 3);
 add_action('template_redirect', 'al_b2b_lock_checkout_subdomain', 1);
 
 
@@ -66,12 +72,21 @@ function al_b2b_activate() {
 	if (!wp_next_scheduled(AL_B2B_CLEANUP_EVENT)) {
 		wp_schedule_event(time() + HOUR_IN_SECONDS, 'hourly', AL_B2B_CLEANUP_EVENT);
 	}
+
+	if (!wp_next_scheduled(AL_B2B_INACTIVE_EVENT)) {
+		wp_schedule_event(time() + HOUR_IN_SECONDS, 'daily', AL_B2B_INACTIVE_EVENT);
+	}
 }
 
 function al_b2b_deactivate() {
 	$timestamp = wp_next_scheduled(AL_B2B_CLEANUP_EVENT);
 	if ($timestamp) {
 		wp_unschedule_event($timestamp, AL_B2B_CLEANUP_EVENT);
+	}
+
+	$inactive_timestamp = wp_next_scheduled(AL_B2B_INACTIVE_EVENT);
+	if ($inactive_timestamp) {
+		wp_unschedule_event($inactive_timestamp, AL_B2B_INACTIVE_EVENT);
 	}
 }
 
@@ -100,6 +115,11 @@ function al_b2b_get_newsletter_table_name() {
 	return $wpdb->prefix . AL_B2B_NEWSLETTER_TABLE;
 }
 
+function al_b2b_get_marketing_event_table_name() {
+	global $wpdb;
+	return $wpdb->prefix . AL_B2B_MARKETING_EVENT_TABLE;
+}
+
 function al_b2b_create_tables() {
 	global $wpdb;
 
@@ -107,6 +127,7 @@ function al_b2b_create_tables() {
 	$sessions_table = al_b2b_get_sessions_table_name();
 	$audit_table = al_b2b_get_audit_table_name();
 	$newsletter_table = al_b2b_get_newsletter_table_name();
+	$events_table = al_b2b_get_marketing_event_table_name();
 
 	require_once ABSPATH . 'wp-admin/includes/upgrade.php';
 
@@ -140,20 +161,45 @@ function al_b2b_create_tables() {
 		id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
 		email VARCHAR(190) NOT NULL,
 		source VARCHAR(64) NOT NULL DEFAULT 'footer',
+		customer_type VARCHAR(32) NOT NULL DEFAULT '',
+		region VARCHAR(16) NOT NULL DEFAULT '',
 		status VARCHAR(32) NOT NULL DEFAULT 'subscribed',
 		subscribed_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		last_event_at DATETIME NULL,
+		attributes LONGTEXT NULL,
 		ip_address VARCHAR(64) NOT NULL DEFAULT '',
 		user_agent VARCHAR(255) NOT NULL DEFAULT '',
 		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 		updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 		PRIMARY KEY (id),
 		UNIQUE KEY email (email),
-		KEY subscribed_at (subscribed_at)
+		KEY subscribed_at (subscribed_at),
+		KEY status (status)
+	) {$charset_collate};";
+
+	$sql_events = "CREATE TABLE {$events_table} (
+		id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+		event_name VARCHAR(64) NOT NULL,
+		email VARCHAR(190) NOT NULL DEFAULT '',
+		user_id BIGINT UNSIGNED NOT NULL DEFAULT 0,
+		source VARCHAR(64) NOT NULL DEFAULT '',
+		customer_type VARCHAR(32) NOT NULL DEFAULT '',
+		region VARCHAR(16) NOT NULL DEFAULT '',
+		payload LONGTEXT NULL,
+		occurred_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		ip_address VARCHAR(64) NOT NULL DEFAULT '',
+		user_agent VARCHAR(255) NOT NULL DEFAULT '',
+		PRIMARY KEY (id),
+		KEY event_name (event_name),
+		KEY email (email),
+		KEY user_id (user_id),
+		KEY occurred_at (occurred_at)
 	) {$charset_collate};";
 
 	dbDelta($sql_sessions);
 	dbDelta($sql_audit);
 	dbDelta($sql_newsletter);
+	dbDelta($sql_events);
 }
 
 function al_b2b_cleanup_expired_sessions() {
@@ -2940,6 +2986,12 @@ function al_b2b_register_routes() {
 		'callback' => 'al_b2b_handle_brevo_webhook',
 		'permission_callback' => '__return_true',
 	));
+
+	register_rest_route('aesthetics-link/v1', '/marketing/track', array(
+		'methods' => 'POST',
+		'callback' => 'al_b2b_track_marketing_event',
+		'permission_callback' => '__return_true',
+	));
 }
 
 function al_b2b_register_user($request) {
@@ -2961,6 +3013,7 @@ function al_b2b_register_user($request) {
 	$first_name = isset($body['firstName']) ? sanitize_text_field($body['firstName']) : '';
 	$last_name = isset($body['lastName']) ? sanitize_text_field($body['lastName']) : '';
 	$account_type = al_b2b_normalize_account_type(isset($body['accountType']) ? $body['accountType'] : 'retail');
+	$marketing_opt_in = !empty($body['marketingOptIn']);
 	$business_info = al_b2b_get_business_info_from_payload($body);
 
 	if (!$email || !is_email($email)) {
@@ -3019,6 +3072,33 @@ function al_b2b_register_user($request) {
 
 	$user = get_user_by('id', $user_id);
 	$email_sent = al_b2b_send_verification_email($user);
+
+	if ($marketing_opt_in && $email && is_email($email)) {
+		$customer_type = $account_type === 'clinic' ? 'clinic' : 'retail';
+		al_b2b_upsert_newsletter_subscriber($email, 'signup', 'subscribed', array(
+			'customer_type' => $customer_type,
+			'region' => '',
+			'last_event_at' => gmdate('Y-m-d H:i:s'),
+			'attributes' => array(
+				'source' => 'signup',
+				'customer_type' => $customer_type,
+			),
+		));
+		al_b2b_record_marketing_event('signup_opt_in', $email, array(
+			'user_id' => (int) $user_id,
+			'source' => 'signup',
+			'customer_type' => $customer_type,
+			'payload' => array(
+				'account_type' => $account_type,
+			),
+		));
+		al_b2b_sync_newsletter_to_brevo($email, 'signup', array(
+			'customer_type' => $customer_type,
+			'attributes' => array(
+				'NEWSLETTER_OPT_IN' => true,
+			),
+		));
+	}
 
 	return rest_ensure_response(array(
 		'user' => al_b2b_map_user($user),
@@ -3254,7 +3334,33 @@ function al_b2b_normalize_newsletter_status($status) {
 	return $status;
 }
 
-function al_b2b_upsert_newsletter_subscriber($email, $source, $status = 'subscribed') {
+function al_b2b_normalize_customer_type($value) {
+	$value = sanitize_key((string) $value);
+	if (in_array($value, array('retail', 'clinic', 'wholesale', 'guest'), true)) {
+		return $value;
+	}
+
+	return '';
+}
+
+function al_b2b_normalize_region($value) {
+	$value = strtoupper(trim((string) $value));
+	$value = preg_replace('/[^A-Z0-9-]/', '', $value);
+	if (!is_string($value)) {
+		return '';
+	}
+
+	return substr($value, 0, 16);
+}
+
+function al_b2b_merge_attributes($existing, $incoming) {
+	$existing = is_array($existing) ? $existing : array();
+	$incoming = is_array($incoming) ? $incoming : array();
+
+	return array_merge($existing, $incoming);
+}
+
+function al_b2b_upsert_newsletter_subscriber($email, $source, $status = 'subscribed', $meta = array()) {
 	global $wpdb;
 
 	$email = sanitize_email((string) $email);
@@ -3270,11 +3376,30 @@ function al_b2b_upsert_newsletter_subscriber($email, $source, $status = 'subscri
 	$status = al_b2b_normalize_newsletter_status($status);
 	$table = al_b2b_get_newsletter_table_name();
 	$now = gmdate('Y-m-d H:i:s');
+	$meta = is_array($meta) ? $meta : array();
+	$customer_type = al_b2b_normalize_customer_type(isset($meta['customer_type']) ? $meta['customer_type'] : '');
+	$region = al_b2b_normalize_region(isset($meta['region']) ? $meta['region'] : '');
+	$last_event_at = isset($meta['last_event_at']) ? trim((string) $meta['last_event_at']) : '';
+	$attributes = isset($meta['attributes']) && is_array($meta['attributes']) ? $meta['attributes'] : array();
+
+	$existing_row = $wpdb->get_row( // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery
+		$wpdb->prepare("SELECT attributes FROM {$table} WHERE email = %s LIMIT 1", strtolower($email)),
+		ARRAY_A
+	);
+	$existing_attributes = array();
+	if (is_array($existing_row) && isset($existing_row['attributes'])) {
+		$decoded = json_decode((string) $existing_row['attributes'], true);
+		$existing_attributes = is_array($decoded) ? $decoded : array();
+	}
+	$merged_attributes = al_b2b_merge_attributes($existing_attributes, $attributes);
 
 	$payload = array(
 		'email' => strtolower($email),
 		'source' => $source,
+		'customer_type' => $customer_type,
+		'region' => $region,
 		'status' => $status,
+		'attributes' => wp_json_encode($merged_attributes),
 		'ip_address' => al_b2b_get_request_ip(),
 		'user_agent' => al_b2b_get_request_user_agent(),
 		'updated_at' => $now,
@@ -3282,6 +3407,9 @@ function al_b2b_upsert_newsletter_subscriber($email, $source, $status = 'subscri
 
 	if ($status === 'subscribed') {
 		$payload['subscribed_at'] = $now;
+	}
+	if ($last_event_at) {
+		$payload['last_event_at'] = $last_event_at;
 	}
 
 	$formats = array_fill(0, count($payload), '%s');
@@ -3294,11 +3422,33 @@ function al_b2b_upsert_newsletter_subscriber($email, $source, $status = 'subscri
 	return $inserted !== false;
 }
 
-function al_b2b_sync_newsletter_to_brevo($email, $source) {
+function al_b2b_sync_contact_to_brevo($email, $source, $options = array()) {
 	$api_key = al_b2b_get_brevo_api_key();
 	$list_id = al_b2b_get_brevo_list_id();
+	$options = is_array($options) ? $options : array();
+	$attributes = isset($options['attributes']) && is_array($options['attributes']) ? $options['attributes'] : array();
+	$include_list = array_key_exists('include_list', $options) ? (bool) $options['include_list'] : true;
+	$customer_type = al_b2b_normalize_customer_type(isset($options['customer_type']) ? $options['customer_type'] : '');
+	$region = al_b2b_normalize_region(isset($options['region']) ? $options['region'] : '');
+	$event_name = sanitize_key((string) (isset($options['event_name']) ? $options['event_name'] : ''));
+	$event_time = isset($options['event_time']) ? trim((string) $options['event_time']) : gmdate('c');
 
-	if (!$api_key || $list_id <= 0) {
+	$brevo_attributes = array(
+		'SOURCE' => strtoupper((string) $source),
+		'LAST_EVENT_AT' => $event_time,
+	);
+	if ($customer_type) {
+		$brevo_attributes['CUSTOMER_TYPE'] = strtoupper($customer_type);
+	}
+	if ($region) {
+		$brevo_attributes['REGION'] = $region;
+	}
+	if ($event_name) {
+		$brevo_attributes['LAST_EVENT'] = strtoupper($event_name);
+	}
+	$brevo_attributes = array_merge($brevo_attributes, $attributes);
+
+	if (!$api_key || ($include_list && $list_id <= 0)) {
 		return array(
 			'ok' => false,
 			'configured' => false,
@@ -3308,12 +3458,12 @@ function al_b2b_sync_newsletter_to_brevo($email, $source) {
 
 	$payload = array(
 		'email' => (string) $email,
-		'listIds' => array($list_id),
 		'updateEnabled' => true,
-		'attributes' => array(
-			'SOURCE' => strtoupper((string) $source),
-		),
+		'attributes' => $brevo_attributes,
 	);
+	if ($include_list) {
+		$payload['listIds'] = array($list_id);
+	}
 
 	$response = wp_remote_post(
 		'https://api.brevo.com/v3/contacts',
@@ -3356,6 +3506,56 @@ function al_b2b_sync_newsletter_to_brevo($email, $source) {
 	);
 }
 
+function al_b2b_sync_newsletter_to_brevo($email, $source, $meta = array()) {
+	$meta = is_array($meta) ? $meta : array();
+	return al_b2b_sync_contact_to_brevo($email, $source, array(
+		'include_list' => true,
+		'customer_type' => isset($meta['customer_type']) ? $meta['customer_type'] : '',
+		'region' => isset($meta['region']) ? $meta['region'] : '',
+		'attributes' => isset($meta['attributes']) ? $meta['attributes'] : array(),
+		'event_name' => 'newsletter_subscribed',
+		'event_time' => gmdate('c'),
+	));
+}
+
+function al_b2b_record_marketing_event($event_name, $email = '', $meta = array()) {
+	global $wpdb;
+
+	$event_name = sanitize_key((string) $event_name);
+	if (!$event_name) {
+		return false;
+	}
+
+	$email = sanitize_email((string) $email);
+	$meta = is_array($meta) ? $meta : array();
+	$table = al_b2b_get_marketing_event_table_name();
+	$occurred_at = isset($meta['occurred_at']) ? trim((string) $meta['occurred_at']) : gmdate('Y-m-d H:i:s');
+	if (!$occurred_at) {
+		$occurred_at = gmdate('Y-m-d H:i:s');
+	}
+
+	$payload = array(
+		'event_name' => $event_name,
+		'email' => $email ? strtolower($email) : '',
+		'user_id' => isset($meta['user_id']) ? max(0, (int) $meta['user_id']) : 0,
+		'source' => sanitize_key((string) (isset($meta['source']) ? $meta['source'] : '')),
+		'customer_type' => al_b2b_normalize_customer_type(isset($meta['customer_type']) ? $meta['customer_type'] : ''),
+		'region' => al_b2b_normalize_region(isset($meta['region']) ? $meta['region'] : ''),
+		'payload' => wp_json_encode(isset($meta['payload']) && is_array($meta['payload']) ? $meta['payload'] : array()),
+		'occurred_at' => $occurred_at,
+		'ip_address' => al_b2b_get_request_ip(),
+		'user_agent' => al_b2b_get_request_user_agent(),
+	);
+
+	$result = $wpdb->insert( // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery
+		$table,
+		$payload,
+		array('%s', '%s', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s')
+	);
+
+	return $result !== false;
+}
+
 function al_b2b_subscribe_newsletter($request) {
 	$limit = al_b2b_guard_rate_limit('newsletter_subscribe', 20, 15 * MINUTE_IN_SECONDS);
 	if (is_wp_error($limit)) {
@@ -3365,17 +3565,43 @@ function al_b2b_subscribe_newsletter($request) {
 	$body = al_b2b_get_json_body($request);
 	$email = isset($body['email']) ? sanitize_email((string) $body['email']) : '';
 	$source = isset($body['source']) ? sanitize_key((string) $body['source']) : 'footer';
+	$customer_type = al_b2b_normalize_customer_type(isset($body['customerType']) ? $body['customerType'] : '');
+	$region = al_b2b_normalize_region(isset($body['region']) ? $body['region'] : '');
 
 	if (!$email || !is_email($email)) {
 		return new WP_Error('invalid_email', 'A valid email address is required.', array('status' => 400));
 	}
 
-	$saved = al_b2b_upsert_newsletter_subscriber($email, $source, 'subscribed');
+	$saved = al_b2b_upsert_newsletter_subscriber($email, $source, 'subscribed', array(
+		'customer_type' => $customer_type,
+		'region' => $region,
+		'last_event_at' => gmdate('Y-m-d H:i:s'),
+		'attributes' => array(
+			'source' => $source,
+			'customer_type' => $customer_type,
+			'region' => $region,
+		),
+	));
 	if (!$saved) {
 		return new WP_Error('newsletter_save_failed', 'Unable to save newsletter subscription.', array('status' => 500));
 	}
 
-	$brevo_sync = al_b2b_sync_newsletter_to_brevo($email, $source);
+	al_b2b_record_marketing_event('newsletter_subscribed', $email, array(
+		'source' => $source,
+		'customer_type' => $customer_type,
+		'region' => $region,
+		'payload' => array(
+			'source' => $source,
+		),
+	));
+
+	$brevo_sync = al_b2b_sync_newsletter_to_brevo($email, $source, array(
+		'customer_type' => $customer_type,
+		'region' => $region,
+		'attributes' => array(
+			'NEWSLETTER_OPT_IN' => true,
+		),
+	));
 
 	return rest_ensure_response(array(
 		'ok' => true,
@@ -3423,6 +3649,12 @@ function al_b2b_map_brevo_event_to_status($event) {
 	if (in_array($event, array('add_contact', 'create_contact', 'update_contact', 'subscribed'), true)) {
 		return 'subscribed';
 	}
+	if (in_array($event, array('opened', 'open', 'unique_opened', 'email_opened'), true)) {
+		return 'engaged_open';
+	}
+	if (in_array($event, array('click', 'clicked', 'unique_clicked', 'email_clicked'), true)) {
+		return 'engaged_click';
+	}
 
 	return '';
 }
@@ -3438,6 +3670,18 @@ function al_b2b_handle_single_brevo_webhook_event($item) {
 
 	if (!$email || !is_email($email) || !$status) {
 		return false;
+	}
+
+	if ($status === 'engaged_open' || $status === 'engaged_click') {
+		$event_name = $status === 'engaged_click' ? 'email_clicked' : 'email_opened';
+		al_b2b_record_marketing_event($event_name, $email, array(
+			'source' => 'brevo_webhook',
+			'payload' => $item,
+			'occurred_at' => gmdate('Y-m-d H:i:s'),
+		));
+		return al_b2b_upsert_newsletter_subscriber($email, 'brevo_webhook', 'subscribed', array(
+			'last_event_at' => gmdate('Y-m-d H:i:s'),
+		));
 	}
 
 	return al_b2b_upsert_newsletter_subscriber($email, 'brevo_webhook', $status);
@@ -3468,6 +3712,183 @@ function al_b2b_handle_brevo_webhook($request) {
 	return rest_ensure_response(array(
 		'ok' => true,
 		'handled' => $handled,
+	));
+}
+
+function al_b2b_track_marketing_event($request) {
+	$body = al_b2b_get_json_body($request);
+	$event_name = isset($body['event']) ? sanitize_key((string) $body['event']) : '';
+	$email = isset($body['email']) ? sanitize_email((string) $body['email']) : '';
+	$source = isset($body['source']) ? sanitize_key((string) $body['source']) : 'storefront';
+	$customer_type = al_b2b_normalize_customer_type(isset($body['customerType']) ? $body['customerType'] : '');
+	$region = al_b2b_normalize_region(isset($body['region']) ? $body['region'] : '');
+	$payload = isset($body['payload']) && is_array($body['payload']) ? $body['payload'] : array();
+	$occurred_at = gmdate('Y-m-d H:i:s');
+
+	if (!$event_name) {
+		return new WP_Error('invalid_event', 'A valid event name is required.', array('status' => 400));
+	}
+
+	$user_id = get_current_user_id();
+	al_b2b_record_marketing_event($event_name, $email, array(
+		'user_id' => $user_id,
+		'source' => $source,
+		'customer_type' => $customer_type,
+		'region' => $region,
+		'payload' => $payload,
+		'occurred_at' => $occurred_at,
+	));
+
+	if ($email && is_email($email)) {
+		al_b2b_upsert_newsletter_subscriber($email, $source, 'subscribed', array(
+			'customer_type' => $customer_type,
+			'region' => $region,
+			'last_event_at' => $occurred_at,
+			'attributes' => array(
+				'last_event' => $event_name,
+				'source' => $source,
+			),
+		));
+
+		al_b2b_sync_contact_to_brevo($email, $source, array(
+			'include_list' => false,
+			'customer_type' => $customer_type,
+			'region' => $region,
+			'event_name' => $event_name,
+			'event_time' => gmdate('c'),
+			'attributes' => array(
+				'LAST_EVENT_SOURCE' => strtoupper($source),
+			),
+		));
+	}
+
+	return rest_ensure_response(array(
+		'ok' => true,
+	));
+}
+
+function al_b2b_mark_inactive_contacts() {
+	global $wpdb;
+
+	$table = al_b2b_get_newsletter_table_name();
+	$threshold = gmdate('Y-m-d H:i:s', time() - (30 * DAY_IN_SECONDS));
+
+	$rows = $wpdb->get_results( // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery
+		$wpdb->prepare(
+			"SELECT email, customer_type, region FROM {$table}
+			 WHERE status = %s
+			   AND (last_event_at IS NULL OR last_event_at <= %s)
+			 LIMIT 500",
+			'subscribed',
+			$threshold
+		),
+		ARRAY_A
+	);
+
+	if (!is_array($rows) || empty($rows)) {
+		return;
+	}
+
+	foreach ($rows as $row) {
+		$email = isset($row['email']) ? sanitize_email((string) $row['email']) : '';
+		if (!$email || !is_email($email)) {
+			continue;
+		}
+
+		al_b2b_record_marketing_event('inactive_30_days', $email, array(
+			'source' => 'cron',
+			'customer_type' => isset($row['customer_type']) ? $row['customer_type'] : '',
+			'region' => isset($row['region']) ? $row['region'] : '',
+			'payload' => array('window_days' => 30),
+			'occurred_at' => gmdate('Y-m-d H:i:s'),
+		));
+
+		al_b2b_sync_contact_to_brevo($email, 'cron', array(
+			'include_list' => false,
+			'customer_type' => isset($row['customer_type']) ? $row['customer_type'] : '',
+			'region' => isset($row['region']) ? $row['region'] : '',
+			'event_name' => 'inactive_30_days',
+			'event_time' => gmdate('c'),
+			'attributes' => array(
+				'INACTIVE_30D' => true,
+			),
+		));
+	}
+}
+
+function al_b2b_render_checkout_newsletter_optin($checkout) {
+	if (!function_exists('woocommerce_form_field')) {
+		return;
+	}
+
+	woocommerce_form_field('al_b2b_newsletter_opt_in', array(
+		'type' => 'checkbox',
+		'class' => array('form-row-wide'),
+		'label' => 'Email me product launches, offers, and skincare updates.',
+		'required' => false,
+	), $checkout->get_value('al_b2b_newsletter_opt_in'));
+}
+
+function al_b2b_capture_checkout_newsletter_optin($order, $data) {
+	if (!$order || !is_a($order, 'WC_Order')) {
+		return;
+	}
+
+	$opt_in = isset($_POST['al_b2b_newsletter_opt_in']) // phpcs:ignore WordPress.Security.NonceVerification.Missing
+		? 'yes'
+		: 'no';
+
+	$order->update_meta_data('_al_b2b_newsletter_opt_in', $opt_in);
+}
+
+function al_b2b_subscribe_checkout_newsletter_optin($order_id, $posted_data, $order) {
+	$order = $order && is_a($order, 'WC_Order') ? $order : wc_get_order($order_id);
+	if (!$order || !is_a($order, 'WC_Order')) {
+		return;
+	}
+
+	$opt_in = method_exists($order, 'get_meta') ? (string) $order->get_meta('_al_b2b_newsletter_opt_in', true) : '';
+	if ($opt_in !== 'yes') {
+		return;
+	}
+
+	$email = method_exists($order, 'get_billing_email') ? sanitize_email((string) $order->get_billing_email()) : '';
+	if (!$email || !is_email($email)) {
+		return;
+	}
+
+	$customer_id = method_exists($order, 'get_customer_id') ? (int) $order->get_customer_id() : 0;
+	$account_type = $customer_id > 0 ? (string) get_user_meta($customer_id, AL_B2B_ACCOUNT_TYPE_META, true) : '';
+	$customer_type = $account_type === 'clinic' ? 'clinic' : ($customer_id > 0 ? 'retail' : 'guest');
+	$billing_country = method_exists($order, 'get_billing_country') ? (string) $order->get_billing_country() : '';
+
+	al_b2b_upsert_newsletter_subscriber($email, 'checkout', 'subscribed', array(
+		'customer_type' => $customer_type,
+		'region' => $billing_country,
+		'last_event_at' => gmdate('Y-m-d H:i:s'),
+		'attributes' => array(
+			'source' => 'checkout',
+			'order_id' => (int) $order_id,
+		),
+	));
+
+	al_b2b_record_marketing_event('checkout_opt_in', $email, array(
+		'user_id' => $customer_id,
+		'source' => 'checkout',
+		'customer_type' => $customer_type,
+		'region' => $billing_country,
+		'payload' => array(
+			'order_id' => (int) $order_id,
+		),
+		'occurred_at' => gmdate('Y-m-d H:i:s'),
+	));
+
+	al_b2b_sync_newsletter_to_brevo($email, 'checkout', array(
+		'customer_type' => $customer_type,
+		'region' => $billing_country,
+		'attributes' => array(
+			'NEWSLETTER_OPT_IN' => true,
+		),
 	));
 }
 
