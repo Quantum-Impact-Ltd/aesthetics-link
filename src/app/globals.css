@@ -6300,6 +6300,10 @@ h5,
   color: var(--color-text) !important;
 }
 
+.auth-page #header:not(.scrolled) .navbar-logo svg path {
+  fill: var(--color-text) !important;
+}
+
 .auth-page #header:not(.scrolled) .navbar-hamburger-line {
   background: var(--color-text);
 }
@@ -6328,6 +6332,10 @@ h5,
 .cart-page #header:not(.scrolled) .navbar-logo,
 .cart-page #header:not(.scrolled) .navbar-logo span {
   color: var(--color-text) !important;
+}
+
+.cart-page #header:not(.scrolled) .navbar-logo svg path {
+  fill: var(--color-text) !important;
 }
 
 .cart-page #header:not(.scrolled) .navbar-hamburger-line {
@@ -7706,6 +7714,10 @@ h5,
 .cart-page #header:not(.scrolled) .navbar-logo,
 .cart-page #header:not(.scrolled) .navbar-logo span {
   color: var(--color-text) !important;
+}
+
+.cart-page #header:not(.scrolled) .navbar-logo svg path {
+  fill: var(--color-text) !important;
 }
 
 .cart-page #header:not(.scrolled) .navbar-hamburger-line {
