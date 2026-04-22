@@ -15,14 +15,18 @@ import { resolveMarketingCustomerType, resolveMarketingRegion } from "@/lib/mark
 import {
   addCartItem,
   addVariableCartItem,
+  fetchProductReviews,
   fetchCart,
   removeCartItem,
+  submitProductReview,
   updateCartItemQuantity,
 } from "@/lib/storefront/client";
 import type {
   StorefrontCart,
   StorefrontCatalogProduct,
   StorefrontDetailProduct,
+  StorefrontProductReview,
+  StorefrontProductReviewsSummary,
   StorefrontVariationAttribute,
 } from "@/lib/storefront/types";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -155,6 +159,14 @@ export default function ProductDetail({ product, related = [] }: { product: Stor
   const [adding, setAdding] = useState(false);
   const [addStatus, setAddStatus] = useState<{ tone: "success" | "error"; message: string } | null>(null);
   const [cartOpen, setCartOpen] = useState(false);
+  const [reviewForm, setReviewForm] = useState({
+    rating: 5,
+    title: "",
+    body: "",
+    author: "",
+    email: "",
+  });
+  const [reviewFeedback, setReviewFeedback] = useState<{ tone: "success" | "error"; message: string } | null>(null);
   const variationConfig = product.variableConfig ?? null;
   const [variationSelection, setVariationSelection] = useState<Record<string, string>>(
     product.variableConfig?.defaults ?? {},
@@ -164,6 +176,42 @@ export default function ProductDetail({ product, related = [] }: { product: Stor
     queryKey: ["storefront", "cart"],
     queryFn: fetchCart,
     enabled: false,
+  });
+
+  const reviewsQuery = useQuery({
+    queryKey: ["storefront", "product-reviews", product.wooId ?? 0],
+    queryFn: () => fetchProductReviews(product.wooId ?? 0),
+    enabled: Number.isInteger(product.wooId) && (product.wooId ?? 0) > 0,
+  });
+
+  const submitReviewMutation = useMutation({
+    mutationFn: () =>
+      submitProductReview({
+        productId: product.wooId ?? 0,
+        rating: reviewForm.rating,
+        title: reviewForm.title,
+        body: reviewForm.body,
+        author: user ? undefined : reviewForm.author,
+        email: user ? undefined : reviewForm.email,
+      }),
+    onSuccess: async (response) => {
+      setReviewFeedback({
+        tone: "success",
+        message: response.message ?? "Review submitted successfully.",
+      });
+      setReviewForm((prev) => ({
+        ...prev,
+        title: "",
+        body: "",
+      }));
+      await reviewsQuery.refetch();
+    },
+    onError: (error) => {
+      setReviewFeedback({
+        tone: "error",
+        message: error instanceof Error ? error.message : "Unable to submit review.",
+      });
+    },
   });
 
   const removeCartMutation = useMutation({
@@ -340,6 +388,20 @@ export default function ProductDetail({ product, related = [] }: { product: Stor
     ? selectedVariation.regularPrice ?? null
     : displayRegularPrice;
 
+  const reviewSummary = useMemo<StorefrontProductReviewsSummary | null>(() => {
+    if (reviewsQuery.data?.summary) {
+      return reviewsQuery.data.summary;
+    }
+    return product.reviewSummary ?? null;
+  }, [product.reviewSummary, reviewsQuery.data?.summary]);
+
+  const reviewItems = useMemo<StorefrontProductReview[]>(() => {
+    if (reviewsQuery.data?.reviews?.length) {
+      return reviewsQuery.data.reviews;
+    }
+    return (product.reviews as StorefrontProductReview[] | undefined) ?? [];
+  }, [product.reviews, reviewsQuery.data?.reviews]);
+
   useEffect(() => {
     if (trackedViewRef.current) {
       return;
@@ -437,6 +499,12 @@ export default function ProductDetail({ product, related = [] }: { product: Stor
     await updateCartMutation.mutateAsync({ key, quantity: nextQty });
   };
 
+  const handleSubmitReview = async (event: React.FormEvent<HTMLFormElement>): Promise<void> => {
+    event.preventDefault();
+    setReviewFeedback(null);
+    await submitReviewMutation.mutateAsync();
+  };
+
   return (
     <div className="product-page">
       <MotionProvider />
@@ -469,11 +537,11 @@ export default function ProductDetail({ product, related = [] }: { product: Stor
               </span>
             </h1>
             <p className="product-intro__tagline">{product.tagline}</p>
-            {product.reviewSummary ? (
+            {reviewSummary ? (
               <a href="#product-reviews" className="product-rating-badge">
-                <Stars rating={product.reviewSummary.average} />
-                <span className="product-rating-badge__score">{product.reviewSummary.average.toFixed(1)}</span>
-                <span className="product-rating-badge__count">({product.reviewSummary.count} reviews)</span>
+                <Stars rating={reviewSummary.average} />
+                <span className="product-rating-badge__score">{reviewSummary.average.toFixed(1)}</span>
+                <span className="product-rating-badge__count">({reviewSummary.count} reviews)</span>
               </a>
             ) : null}
             <p className="product-intro__price" style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
@@ -704,52 +772,143 @@ export default function ProductDetail({ product, related = [] }: { product: Stor
         </section>
 
         {/* ── 6. REVIEWS ───────────────────────────────────────────── */}
-        {product.reviewSummary && product.reviews?.length ? (
+        {product.wooId ? (
           <section id="product-reviews" className="reveal-up" data-reveal>
             <div className="container">
               <div className="reviews__head">
                 <h2 className="reviews__title">Customer <span className="font-serif">Reviews</span></h2>
               </div>
               <div className="reviews__body">
-                <div className="reviews__summary">
-                  <p className="reviews__avg">{product.reviewSummary.average.toFixed(1)}</p>
-                  <Stars rating={product.reviewSummary.average} size="lg" />
-                  <p className="reviews__total">Based on {product.reviewSummary.count} reviews</p>
-                  <div className="reviews__bars">
-                    {product.reviewSummary.distribution.map((count, i) => {
-                      const star = 5 - i;
-                      const pct = Math.round((count / product.reviewSummary!.count) * 100);
-                      return (
-                        <div key={star} className="reviews__bar-row">
-                          <span className="reviews__bar-label">{star}</span>
-                          <div className="reviews__bar-track">
-                            <div className="reviews__bar-fill" style={{ width: `${pct}%` }} />
+                {reviewSummary ? (
+                  <div className="reviews__summary">
+                    <p className="reviews__avg">{reviewSummary.average.toFixed(1)}</p>
+                    <Stars rating={reviewSummary.average} size="lg" />
+                    <p className="reviews__total">Based on {reviewSummary.count} reviews</p>
+                    <div className="reviews__bars">
+                      {reviewSummary.distribution.map((count, i) => {
+                        const star = 5 - i;
+                        const pct = reviewSummary.count > 0 ? Math.round((count / reviewSummary.count) * 100) : 0;
+                        return (
+                          <div key={star} className="reviews__bar-row">
+                            <span className="reviews__bar-label">{star}</span>
+                            <div className="reviews__bar-track">
+                              <div className="reviews__bar-fill" style={{ width: `${pct}%` }} />
+                            </div>
+                            <span className="reviews__bar-pct">{pct}%</span>
                           </div>
-                          <span className="reviews__bar-pct">{pct}%</span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-                <div className="reviews__list">
-                  {product.reviews.map((review) => (
-                    <div key={review.id} className="review-card">
-                      <div className="review-card__top">
-                        <Stars rating={review.rating} />
-                        {review.verified ? (
-                          <span className="review-card__verified">Verified Purchase</span>
-                        ) : null}
-                      </div>
-                      <h3 className="review-card__title">{review.title}</h3>
-                      <p className="review-card__body">{review.body}</p>
-                      <div className="review-card__meta">
-                        <span className="review-card__author">{review.author}</span>
-                        <span className="review-card__date">{review.date}</span>
-                      </div>
+                        );
+                      })}
                     </div>
-                  ))}
+                  </div>
+                ) : null}
+                <div className="reviews__list">
+                  {reviewItems.length > 0 ? (
+                    reviewItems.map((review) => (
+                      <div key={review.id} className="review-card">
+                        <div className="review-card__top">
+                          <Stars rating={review.rating} />
+                          {review.verified ? (
+                            <span className="review-card__verified">Verified Purchase</span>
+                          ) : null}
+                        </div>
+                        <h3 className="review-card__title">{review.title}</h3>
+                        <p className="review-card__body">{review.body}</p>
+                        <div className="review-card__meta">
+                          <span className="review-card__author">{review.author}</span>
+                          <span className="review-card__date">{review.date}</span>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <p style={{ color: "var(--color-gray2)" }}>
+                      No reviews yet. Be the first to share your experience.
+                    </p>
+                  )}
                 </div>
               </div>
+              <form
+                onSubmit={handleSubmitReview}
+                style={{
+                  marginTop: "1.5rem",
+                  padding: "1rem",
+                  border: "1px solid rgba(0,0,0,0.12)",
+                  borderRadius: "14px",
+                  background: "rgba(255,255,255,0.68)",
+                }}
+              >
+                <h3 style={{ marginBottom: "0.85rem" }}>Write a Review</h3>
+                <div style={{ display: "grid", gap: "0.75rem" }}>
+                  <label style={{ display: "grid", gap: "0.35rem" }}>
+                    <span>Rating</span>
+                    <select
+                      value={reviewForm.rating}
+                      onChange={(event) => setReviewForm((prev) => ({ ...prev, rating: Number(event.target.value) }))}
+                      required
+                    >
+                      <option value={5}>5 - Excellent</option>
+                      <option value={4}>4 - Good</option>
+                      <option value={3}>3 - Average</option>
+                      <option value={2}>2 - Fair</option>
+                      <option value={1}>1 - Poor</option>
+                    </select>
+                  </label>
+                  <label style={{ display: "grid", gap: "0.35rem" }}>
+                    <span>Title</span>
+                    <input
+                      type="text"
+                      value={reviewForm.title}
+                      onChange={(event) => setReviewForm((prev) => ({ ...prev, title: event.target.value }))}
+                      placeholder="Summarize your experience"
+                      required
+                    />
+                  </label>
+                  <label style={{ display: "grid", gap: "0.35rem" }}>
+                    <span>Review</span>
+                    <textarea
+                      value={reviewForm.body}
+                      onChange={(event) => setReviewForm((prev) => ({ ...prev, body: event.target.value }))}
+                      placeholder="Share what you liked, what improved, and who this is for."
+                      rows={5}
+                      required
+                    />
+                  </label>
+                  {!user ? (
+                    <div style={{ display: "grid", gap: "0.75rem", gridTemplateColumns: "repeat(2, minmax(0, 1fr))" }}>
+                      <label style={{ display: "grid", gap: "0.35rem" }}>
+                        <span>Name</span>
+                        <input
+                          type="text"
+                          value={reviewForm.author}
+                          onChange={(event) => setReviewForm((prev) => ({ ...prev, author: event.target.value }))}
+                          placeholder="Your name"
+                          required
+                        />
+                      </label>
+                      <label style={{ display: "grid", gap: "0.35rem" }}>
+                        <span>Email</span>
+                        <input
+                          type="email"
+                          value={reviewForm.email}
+                          onChange={(event) => setReviewForm((prev) => ({ ...prev, email: event.target.value }))}
+                          placeholder="you@example.com"
+                          required
+                        />
+                      </label>
+                    </div>
+                  ) : null}
+                </div>
+                <button type="submit" className="btn product-intro__cta" style={{ marginTop: "1rem" }} disabled={submitReviewMutation.isPending}>
+                  {submitReviewMutation.isPending ? "Submitting..." : "Submit Review"}
+                </button>
+                {reviewsQuery.isFetching ? (
+                  <p style={{ marginTop: "0.6rem", color: "var(--color-gray2)" }}>Refreshing reviews…</p>
+                ) : null}
+                {reviewFeedback ? (
+                  <p style={{ marginTop: "0.6rem", color: reviewFeedback.tone === "success" ? "#2f6f44" : "#b04545" }}>
+                    {reviewFeedback.message}
+                  </p>
+                ) : null}
+              </form>
             </div>
           </section>
         ) : null}

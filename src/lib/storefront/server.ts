@@ -8,7 +8,7 @@ import type {
   GQLProductsResponse,
   GQLVariableProduct,
 } from "@/lib/graphql/types";
-import { getProductBySlug } from "@/data/products";
+import { getProductBySlug } from "@/data/product-enrichment";
 import { getWooStoreBaseUrl } from "@/lib/storefront/config";
 import { decodeEntities } from "@/lib/utils/text";
 import {

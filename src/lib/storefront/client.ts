@@ -3,6 +3,7 @@
 import type {
   StorefrontCart,
   StorefrontOrderLookupResult,
+  StorefrontProductReviewsResponse,
 } from "@/lib/storefront/types";
 import { decodeEntities } from "@/lib/utils/text";
 import { ACCENT_COLORS } from "@/lib/storefront/constants";
@@ -454,4 +455,59 @@ export async function lookupGuestOrder(orderNumber: string, email: string): Prom
   }
 
   return payload as StorefrontOrderLookupResult;
+}
+
+export async function fetchProductReviews(productId: number): Promise<StorefrontProductReviewsResponse> {
+  const response = await fetch(`/api/products/reviews?productId=${encodeURIComponent(String(productId))}`, {
+    method: "GET",
+    headers: {
+      Accept: "application/json",
+    },
+    cache: "no-store",
+  });
+
+  const payload = (await response.json().catch(() => null)) as
+    | StorefrontProductReviewsResponse
+    | { message?: string }
+    | null;
+
+  if (!response.ok) {
+    throw new Error(payload && "message" in payload && payload.message ? payload.message : "Unable to load reviews.");
+  }
+
+  return payload as StorefrontProductReviewsResponse;
+}
+
+export async function submitProductReview(input: {
+  productId: number;
+  rating: number;
+  title: string;
+  body: string;
+  author?: string;
+  email?: string;
+}): Promise<{ ok: boolean; pendingModeration?: boolean; message?: string }> {
+  const response = await fetch("/api/products/reviews", {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    },
+    cache: "no-store",
+    body: JSON.stringify(input),
+  });
+
+  const payload = (await response.json().catch(() => null)) as
+    | { ok?: boolean; pendingModeration?: boolean; message?: string }
+    | { message?: string }
+    | null;
+
+  if (!response.ok) {
+    throw new Error(payload && "message" in payload && payload.message ? payload.message : "Unable to submit review.");
+  }
+
+  return {
+    ok: true,
+    pendingModeration: Boolean(payload && "pendingModeration" in payload && payload.pendingModeration),
+    message: payload && "message" in payload ? payload.message : undefined,
+  };
 }

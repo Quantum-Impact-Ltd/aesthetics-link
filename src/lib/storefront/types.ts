@@ -211,6 +211,28 @@ export type StorefrontOrderLookupResult = {
   };
 };
 
+export type StorefrontProductReviewsSummary = {
+  average: number;
+  count: number;
+  distribution: [number, number, number, number, number];
+};
+
+export type StorefrontProductReview = {
+  id: string;
+  author: string;
+  rating: number;
+  date: string;
+  title: string;
+  body: string;
+  verified: boolean;
+};
+
+export type StorefrontProductReviewsResponse = {
+  productId: number;
+  summary: StorefrontProductReviewsSummary | null;
+  reviews: StorefrontProductReview[];
+};
+
 export type StorefrontDetailProduct = StorefrontBaseProduct & {
   regularPrice?: string | null;
   priceSource?: "retail" | "wholesale";

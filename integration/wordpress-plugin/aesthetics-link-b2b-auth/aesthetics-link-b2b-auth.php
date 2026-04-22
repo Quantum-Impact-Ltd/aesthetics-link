@@ -3190,6 +3190,18 @@ function al_b2b_register_routes() {
 		'callback' => 'al_b2b_track_marketing_event',
 		'permission_callback' => '__return_true',
 	));
+
+	register_rest_route('aesthetics-link/v1', '/products/reviews', array(
+		'methods' => 'GET',
+		'callback' => 'al_b2b_get_product_reviews',
+		'permission_callback' => '__return_true',
+	));
+
+	register_rest_route('aesthetics-link/v1', '/products/reviews', array(
+		'methods' => 'POST',
+		'callback' => 'al_b2b_submit_product_review',
+		'permission_callback' => '__return_true',
+	));
 }
 
 function al_b2b_register_user($request) {
@@ -4087,6 +4099,184 @@ function al_b2b_subscribe_checkout_newsletter_optin($order_id, $posted_data, $or
 		'attributes' => array(
 			'NEWSLETTER_OPT_IN' => true,
 		),
+	));
+}
+
+function al_b2b_get_product_reviews($request) {
+	$product_id = absint($request->get_param('productId'));
+	if ($product_id <= 0) {
+		return new WP_Error('invalid_product_id', 'A valid productId is required.', array('status' => 400));
+	}
+
+	$product = get_post($product_id);
+	if (!$product || $product->post_type !== 'product') {
+		return new WP_Error('product_not_found', 'Product not found.', array('status' => 404));
+	}
+
+	$comments = get_comments(array(
+		'post_id' => $product_id,
+		'status' => 'approve',
+		'type' => 'review',
+		'number' => 100,
+		'orderby' => 'comment_date_gmt',
+		'order' => 'DESC',
+	));
+
+	$distribution = array(0, 0, 0, 0, 0);
+	$rating_sum = 0;
+	$rating_count = 0;
+	$reviews = array();
+
+	foreach ($comments as $comment) {
+		if (!$comment instanceof WP_Comment) {
+			continue;
+		}
+
+		$rating = (int) get_comment_meta($comment->comment_ID, 'rating', true);
+		if ($rating < 1 || $rating > 5) {
+			continue;
+		}
+
+		$rating_sum += $rating;
+		$rating_count += 1;
+		$distribution_index = 5 - $rating;
+		if (isset($distribution[$distribution_index])) {
+			$distribution[$distribution_index] += 1;
+		}
+
+		$title = (string) get_comment_meta($comment->comment_ID, 'al_review_title', true);
+		if (!$title) {
+			$excerpt = wp_trim_words(wp_strip_all_tags((string) $comment->comment_content), 10, '');
+			$title = $excerpt ? $excerpt : 'Review';
+		}
+
+		$verified = false;
+		if (function_exists('wc_review_is_from_verified_owner')) {
+			$verified = (bool) wc_review_is_from_verified_owner((int) $comment->comment_ID);
+		}
+
+		$reviews[] = array(
+			'id' => (string) $comment->comment_ID,
+			'author' => $comment->comment_author ? $comment->comment_author : 'Anonymous',
+			'rating' => $rating,
+			'date' => mysql2date('j M Y', $comment->comment_date_gmt ?: $comment->comment_date),
+			'title' => $title,
+			'body' => (string) $comment->comment_content,
+			'verified' => $verified,
+		);
+	}
+
+	$summary = null;
+	if ($rating_count > 0) {
+		$summary = array(
+			'average' => round($rating_sum / $rating_count, 1),
+			'count' => $rating_count,
+			'distribution' => $distribution,
+		);
+	}
+
+	return rest_ensure_response(array(
+		'productId' => $product_id,
+		'summary' => $summary,
+		'reviews' => $reviews,
+	));
+}
+
+function al_b2b_submit_product_review($request) {
+	$limit = al_b2b_guard_rate_limit('submit_product_review', 10, 15 * MINUTE_IN_SECONDS);
+	if (is_wp_error($limit)) {
+		return $limit;
+	}
+
+	$body = al_b2b_get_json_body($request);
+	$product_id = isset($body['productId']) ? absint($body['productId']) : 0;
+	$rating = isset($body['rating']) ? (int) $body['rating'] : 0;
+	$title = isset($body['title']) ? sanitize_text_field((string) $body['title']) : '';
+	$content = isset($body['body']) ? wp_kses_post((string) $body['body']) : '';
+	$guest_author = isset($body['author']) ? sanitize_text_field((string) $body['author']) : '';
+	$guest_email = isset($body['email']) ? sanitize_email((string) $body['email']) : '';
+
+	if ($product_id <= 0) {
+		return new WP_Error('invalid_product_id', 'A valid productId is required.', array('status' => 400));
+	}
+	if ($rating < 1 || $rating > 5) {
+		return new WP_Error('invalid_rating', 'Rating must be between 1 and 5.', array('status' => 400));
+	}
+	if (!$title || !$content) {
+		return new WP_Error('invalid_review', 'Review title and content are required.', array('status' => 400));
+	}
+
+	$product = get_post($product_id);
+	if (!$product || $product->post_type !== 'product') {
+		return new WP_Error('product_not_found', 'Product not found.', array('status' => 404));
+	}
+
+	$auth_user = al_b2b_authenticate_request($request);
+	$user = $auth_user instanceof WP_User ? $auth_user : null;
+	$user_id = $user ? (int) $user->ID : 0;
+
+	if (get_option('comment_registration') && !$user) {
+		return new WP_Error('auth_required', 'You must be logged in to submit a review.', array('status' => 401));
+	}
+
+	$author_name = $user ? $user->display_name : $guest_author;
+	$author_email = $user ? $user->user_email : $guest_email;
+	if (!$author_name || !$author_email || !is_email($author_email)) {
+		return new WP_Error('invalid_author', 'A valid name and email are required.', array('status' => 400));
+	}
+
+	if (get_option('woocommerce_review_rating_verification_required') === 'yes') {
+		$bought = function_exists('wc_customer_bought_product')
+			? wc_customer_bought_product($author_email, $user_id, $product_id)
+			: true;
+		if (!$bought) {
+			return new WP_Error(
+				'not_verified_buyer',
+				'Only verified buyers can leave a review for this product.',
+				array('status' => 403)
+			);
+		}
+	}
+
+	$comment_data = array(
+		'comment_post_ID' => $product_id,
+		'comment_author' => $author_name,
+		'comment_author_email' => $author_email,
+		'comment_content' => $content,
+		'comment_type' => 'review',
+		'comment_parent' => 0,
+		'user_id' => $user_id,
+		'comment_author_IP' => al_b2b_get_request_ip(),
+		'comment_agent' => al_b2b_get_request_user_agent(),
+	);
+
+	$comment_id = wp_new_comment($comment_data, true);
+	if (is_wp_error($comment_id)) {
+		return new WP_Error('review_submit_failed', $comment_id->get_error_message(), array('status' => 500));
+	}
+
+	update_comment_meta($comment_id, 'rating', $rating);
+	update_comment_meta($comment_id, 'al_review_title', $title);
+
+	if (function_exists('wc_update_product_rating_counts')) {
+		wc_update_product_rating_counts($product_id);
+	}
+	if (function_exists('wc_update_product_review_count')) {
+		wc_update_product_review_count($product_id);
+	}
+	if (function_exists('wc_update_product_average_rating')) {
+		wc_update_product_average_rating($product_id);
+	}
+
+	$comment = get_comment($comment_id);
+	$pending = $comment ? ((string) $comment->comment_approved !== '1') : true;
+
+	return rest_ensure_response(array(
+		'ok' => true,
+		'pendingModeration' => $pending,
+		'message' => $pending
+			? 'Review submitted and awaiting moderation.'
+			: 'Review submitted successfully.',
 	));
 }
 
