@@ -501,11 +501,8 @@ export default function ProductDetail({ product, related = [] }: { product: Stor
       author: user ? undefined : reviewForm.author,
       email: user ? undefined : reviewForm.email,
     })
-      .then((response) => {
-        setReviewFeedback({
-          tone: "success",
-          message: response.message ?? "Review submitted successfully.",
-        });
+      .then(() => {
+        setReviewFeedback(null);
         setReviewForm((prev) => ({
           ...prev,
           title: "",
@@ -820,11 +817,6 @@ export default function ProductDetail({ product, related = [] }: { product: Stor
                 </button>
               </div>
             </div>
-            {reviewFeedback ? (
-              <p className={`review-form__feedback review-form__feedback--${reviewFeedback.tone}`} style={{ marginBottom: "0.9rem" }}>
-                {reviewFeedback.message}
-              </p>
-            ) : null}
 
             {reviewSummary ? (
               <div className="reviews__body">
