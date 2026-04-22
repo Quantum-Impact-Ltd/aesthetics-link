@@ -486,6 +486,19 @@ export async function submitProductReview(input: {
   author?: string;
   email?: string;
 }): Promise<{ ok: boolean; pendingModeration?: boolean; message?: string }> {
+  const normalizeReviewMessage = (raw: string | undefined, fallback: string): string => {
+    const message = decodeEntities(raw ?? "").replace(/\s+/g, " ").trim();
+    if (!message) {
+      return fallback;
+    }
+
+    if (/duplicate comment detected|already said that/i.test(message)) {
+      return "You already submitted this review. Please edit the text and try again.";
+    }
+
+    return message;
+  };
+
   const response = await fetch("/api/products/reviews", {
     method: "POST",
     headers: {
@@ -502,12 +515,20 @@ export async function submitProductReview(input: {
     | null;
 
   if (!response.ok) {
-    throw new Error(payload && "message" in payload && payload.message ? payload.message : "Unable to submit review.");
+    throw new Error(
+      normalizeReviewMessage(
+        payload && "message" in payload ? payload.message : undefined,
+        "Unable to submit review.",
+      ),
+    );
   }
 
   return {
     ok: true,
     pendingModeration: Boolean(payload && "pendingModeration" in payload && payload.pendingModeration),
-    message: payload && "message" in payload ? payload.message : undefined,
+    message: normalizeReviewMessage(
+      payload && "message" in payload ? payload.message : undefined,
+      "Review submitted successfully.",
+    ),
   };
 }

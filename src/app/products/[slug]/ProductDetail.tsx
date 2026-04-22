@@ -511,6 +511,8 @@ export default function ProductDetail({ product, related = [] }: { product: Stor
           title: "",
           body: "",
         }));
+        setReviewsModalTab("read");
+        setReviewsModalOpen(false);
         void reviewsQuery.refetch();
       })
       .catch((error) => {
@@ -818,6 +820,11 @@ export default function ProductDetail({ product, related = [] }: { product: Stor
                 </button>
               </div>
             </div>
+            {reviewFeedback ? (
+              <p className={`review-form__feedback review-form__feedback--${reviewFeedback.tone}`} style={{ marginBottom: "0.9rem" }}>
+                {reviewFeedback.message}
+              </p>
+            ) : null}
 
             {reviewSummary ? (
               <div className="reviews__body">
