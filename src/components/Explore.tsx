@@ -405,17 +405,12 @@ export default function Explore({
 }) {
   const img1Ref = useParallax<HTMLDivElement>(0.12);
   const img2Ref = useParallax<HTMLDivElement>(0.12);
-<<<<<<< HEAD
   const bestSellerProducts =
     bestsellers && bestsellers.length > 0
       ? bestsellers
       : pureBrillianceProducts;
   const newArrivalProducts =
     newArrivals && newArrivals.length > 0 ? newArrivals : refinedBlendsProducts;
-=======
-  const bestSellerProducts = bestsellers && bestsellers.length > 0 ? bestsellers : pureBrillianceProducts;
-  const newArrivalProducts = newArrivals && newArrivals.length > 0 ? newArrivals : refinedBlendsProducts;
->>>>>>> cce628b (fix: explore.tsx error)
 
   return (
     <section id="explore" style={{ position: "relative", margin: 0 }}>
