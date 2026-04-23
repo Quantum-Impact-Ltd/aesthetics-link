@@ -31,7 +31,12 @@ function QuickCartIcon() {
 
 function SliderArrowIcon() {
   return (
-    <svg className="icon-arrow" width="13" height="8" viewBox="0 0 13 8" fill="none">
+    <svg
+      className="icon-arrow"
+      width="13"
+      height="8"
+      viewBox="0 0 13 8"
+      fill="none">
       <path
         d="M12.3536 4.35355C12.5488 4.15829 12.5488 3.84171 12.3536 3.64645L9.17157 0.464466C8.97631 0.269204 8.65973 0.269204 8.46447 0.464466C8.2692 0.659728 8.2692 0.976311 8.46447 1.17157L11.2929 4L8.46447 6.82843C8.2692 7.02369 8.2692 7.34027 8.46447 7.53553C8.65973 7.7308 8.97631 7.7308 9.17157 7.53553L12.3536 4.35355ZM0 4.5H12V3.5H0V4.5Z"
         fill="white"
@@ -62,7 +67,9 @@ function ProductCard({
   isActive = false,
 }: Omit<ProductCardProps, "variant"> & { isActive?: boolean }) {
   return (
-    <Link href={href} className={`product__card${isActive ? " is-active" : ""}`}>
+    <Link
+      href={href}
+      className={`product__card${isActive ? " is-active" : ""}`}>
       <div className="product__card-media">
         <div className="product__card-head">
           <p className="product__card-category pill-fill">{category}</p>
@@ -71,10 +78,22 @@ function ProductCard({
           </div>
         </div>
         <div className="product__card-img">
-          <Image src={imageSrc} alt={title} fill sizes="280px" style={{ objectFit: "cover" }} />
+          <Image
+            src={imageSrc}
+            alt={title}
+            fill
+            sizes="280px"
+            style={{ objectFit: "cover" }}
+          />
         </div>
         <div className="product__card-img2">
-          <Image src={imageHoverSrc} alt="" fill sizes="280px" style={{ objectFit: "cover" }} />
+          <Image
+            src={imageHoverSrc}
+            alt=""
+            fill
+            sizes="280px"
+            style={{ objectFit: "cover" }}
+          />
         </div>
       </div>
       <div className="product__card-foot">
@@ -111,14 +130,30 @@ function ProductRail({
   /* card width + gap in px */
   const getMetrics = useCallback(() => {
     const track = trackRef.current;
-    if (!track) return { cardW: 0, gap: 0, step: 0, count: products.length, maxOffset: 0 };
+    if (!track)
+      return {
+        cardW: 0,
+        gap: 0,
+        step: 0,
+        count: products.length,
+        maxOffset: 0,
+      };
     const cards = track.querySelectorAll<HTMLElement>(".product__card");
-    if (!cards.length) return { cardW: 0, gap: 0, step: 0, count: products.length, maxOffset: 0 };
+    if (!cards.length)
+      return {
+        cardW: 0,
+        gap: 0,
+        step: 0,
+        count: products.length,
+        maxOffset: 0,
+      };
     const cardW = cards[0].offsetWidth;
-    const gap = cards.length > 1 ? cards[1].offsetLeft - cards[0].offsetLeft - cardW : 0;
+    const gap =
+      cards.length > 1 ? cards[1].offsetLeft - cards[0].offsetLeft - cardW : 0;
     const step = cardW + gap;
     const trackW = (cards.length - 1) * step + cardW;
-    const viewW = wrapperRef.current?.offsetWidth ?? track.parentElement?.offsetWidth ?? 0;
+    const viewW =
+      wrapperRef.current?.offsetWidth ?? track.parentElement?.offsetWidth ?? 0;
     const maxOffset = Math.max(0, trackW - viewW);
     return { cardW, gap, step, count: cards.length, maxOffset };
   }, [products.length]);
@@ -154,19 +189,25 @@ function ProductRail({
   }, []);
 
   /* snap to nearest card index */
-  const snapToIndex = useCallback((index: number) => {
-    const { step, count, maxOffset } = getMetrics();
-    const clamped = Math.max(0, Math.min(count - 1, index));
-    const offset = Math.min(clamped * step, maxOffset);
-    setActiveIndex(clamped);
-    animateTo(offset);
-  }, [getMetrics, animateTo]);
+  const snapToIndex = useCallback(
+    (index: number) => {
+      const { step, count, maxOffset } = getMetrics();
+      const clamped = Math.max(0, Math.min(count - 1, index));
+      const offset = Math.min(clamped * step, maxOffset);
+      setActiveIndex(clamped);
+      animateTo(offset);
+    },
+    [getMetrics, animateTo],
+  );
 
   /* find closest index from current track offset */
   const closestIndex = useCallback(() => {
     const { step, count } = getMetrics();
     if (step === 0) return 0;
-    return Math.max(0, Math.min(count - 1, Math.round(drag.current.trackX / step)));
+    return Math.max(
+      0,
+      Math.min(count - 1, Math.round(drag.current.trackX / step)),
+    );
   }, [getMetrics]);
 
   /* pointer handlers */
@@ -232,12 +273,12 @@ function ProductRail({
     const velocityThreshold = 0.3;
     let target = closestIndex();
     if (Math.abs(drag.current.velocity) > velocityThreshold && step > 0) {
-      if (drag.current.velocity < 0) target = Math.ceil(drag.current.trackX / step);
+      if (drag.current.velocity < 0)
+        target = Math.ceil(drag.current.trackX / step);
       else target = Math.floor(drag.current.trackX / step);
     }
     snapToIndex(target);
   };
-
 
   const count = products.length;
 
@@ -249,8 +290,7 @@ function ProductRail({
           className="slider-arrow slider-arrow--prev"
           aria-label="Previous products"
           disabled={activeIndex === 0}
-          onClick={() => snapToIndex(activeIndex - 1)}
-        >
+          onClick={() => snapToIndex(activeIndex - 1)}>
           <SliderArrowIcon />
         </button>
         <button
@@ -258,8 +298,7 @@ function ProductRail({
           className="slider-arrow"
           aria-label="Next products"
           disabled={activeIndex >= count - 1}
-          onClick={() => snapToIndex(activeIndex + 1)}
-        >
+          onClick={() => snapToIndex(activeIndex + 1)}>
           <SliderArrowIcon />
         </button>
       </div>
@@ -277,8 +316,7 @@ function ProductRail({
             event.stopPropagation();
             drag.current.moved = false;
           }
-        }}
-      >
+        }}>
         <div ref={trackRef} className="product__carousel-track">
           {products.map((product) => (
             <ProductCard key={product.href} {...product} isActive />
@@ -365,17 +403,14 @@ export default function Explore({
   bestsellers?: LandingExploreProduct[];
   newArrivals?: LandingExploreProduct[];
 }) {
-<<<<<<< Updated upstream
-  const img1Ref = useParallax<HTMLImageElement>(0.12);
-  const img2Ref = useParallax<HTMLImageElement>(0.12);
-  const bestSellerProducts = bestsellers ?? pureBrillianceProducts;
-  const newArrivalProducts = newArrivals ?? refinedBlendsProducts;
-=======
   const img1Ref = useParallax<HTMLDivElement>(0.12);
   const img2Ref = useParallax<HTMLDivElement>(0.12);
-  const bestSellerProducts = bestsellers && bestsellers.length > 0 ? bestsellers : pureBrillianceProducts;
-  const newArrivalProducts = newArrivals && newArrivals.length > 0 ? newArrivals : refinedBlendsProducts;
->>>>>>> Stashed changes
+  const bestSellerProducts =
+    bestsellers && bestsellers.length > 0
+      ? bestsellers
+      : pureBrillianceProducts;
+  const newArrivalProducts =
+    newArrivals && newArrivals.length > 0 ? newArrivals : refinedBlendsProducts;
 
   return (
     <section id="explore" style={{ position: "relative", margin: 0 }}>
@@ -389,8 +424,7 @@ export default function Explore({
           width="19"
           height="19"
           viewBox="0 0 19 19"
-          fill="none"
-        >
+          fill="none">
           <path
             d="M7.29395 12.5401L12.539 17.7852L17.7841 12.5401"
             stroke="#414141"
@@ -429,7 +463,9 @@ export default function Explore({
               Best <br />
               <span className="font-serif">Sellers</span>
             </h3>
-            <Link href="/products" className="superscript">Shop all</Link>
+            <Link href="/products" className="superscript">
+              Shop all
+            </Link>
           </div>
           <div className="half__grid-product">
             <ProductRail products={bestSellerProducts} reverse />
@@ -461,7 +497,9 @@ export default function Explore({
               New <br />
               <span className="font-serif">Arrivals</span>
             </h3>
-            <Link href="/products" className="superscript">Shop all</Link>
+            <Link href="/products" className="superscript">
+              Shop all
+            </Link>
           </div>
           <div className="half__grid-product">
             <ProductRail products={newArrivalProducts} />
