@@ -59,9 +59,7 @@ add_action('product_cat_add_form_fields', 'al_b2b_render_product_cat_wholesale_a
 add_action('product_cat_edit_form_fields', 'al_b2b_render_product_cat_wholesale_edit_fields', 10, 1);
 add_action('created_product_cat', 'al_b2b_save_product_cat_wholesale_fields', 10, 1);
 add_action('edited_product_cat', 'al_b2b_save_product_cat_wholesale_fields', 10, 1);
-add_action('woocommerce_after_checkout_billing_form', 'al_b2b_render_checkout_newsletter_optin');
-add_action('woocommerce_checkout_create_order', 'al_b2b_capture_checkout_newsletter_optin', 10, 2);
-add_action('woocommerce_checkout_order_processed', 'al_b2b_subscribe_checkout_newsletter_optin', 10, 3);
+add_filter('woocommerce_defer_transactional_emails', '__return_true');
 add_action('template_redirect', 'al_b2b_lock_checkout_subdomain', 1);
 
 
@@ -4344,82 +4342,6 @@ function al_b2b_mark_inactive_contacts() {
 			),
 		));
 	}
-}
-
-function al_b2b_render_checkout_newsletter_optin($checkout) {
-	if (!function_exists('woocommerce_form_field')) {
-		return;
-	}
-
-	woocommerce_form_field('al_b2b_newsletter_opt_in', array(
-		'type' => 'checkbox',
-		'class' => array('form-row-wide'),
-		'label' => 'Email me product launches, offers, and skincare updates.',
-		'required' => false,
-	), $checkout->get_value('al_b2b_newsletter_opt_in'));
-}
-
-function al_b2b_capture_checkout_newsletter_optin($order, $data) {
-	if (!$order || !is_a($order, 'WC_Order')) {
-		return;
-	}
-
-	$opt_in = isset($_POST['al_b2b_newsletter_opt_in']) // phpcs:ignore WordPress.Security.NonceVerification.Missing
-		? 'yes'
-		: 'no';
-
-	$order->update_meta_data('_al_b2b_newsletter_opt_in', $opt_in);
-}
-
-function al_b2b_subscribe_checkout_newsletter_optin($order_id, $posted_data, $order) {
-	$order = $order && is_a($order, 'WC_Order') ? $order : wc_get_order($order_id);
-	if (!$order || !is_a($order, 'WC_Order')) {
-		return;
-	}
-
-	$opt_in = method_exists($order, 'get_meta') ? (string) $order->get_meta('_al_b2b_newsletter_opt_in', true) : '';
-	if ($opt_in !== 'yes') {
-		return;
-	}
-
-	$email = method_exists($order, 'get_billing_email') ? sanitize_email((string) $order->get_billing_email()) : '';
-	if (!$email || !is_email($email)) {
-		return;
-	}
-
-	$customer_id = method_exists($order, 'get_customer_id') ? (int) $order->get_customer_id() : 0;
-	$account_type = $customer_id > 0 ? (string) get_user_meta($customer_id, AL_B2B_ACCOUNT_TYPE_META, true) : '';
-	$customer_type = $account_type === 'clinic' ? 'clinic' : ($customer_id > 0 ? 'retail' : 'guest');
-	$billing_country = method_exists($order, 'get_billing_country') ? (string) $order->get_billing_country() : '';
-
-	al_b2b_upsert_newsletter_subscriber($email, 'checkout', 'subscribed', array(
-		'customer_type' => $customer_type,
-		'region' => $billing_country,
-		'last_event_at' => gmdate('Y-m-d H:i:s'),
-		'attributes' => array(
-			'source' => 'checkout',
-			'order_id' => (int) $order_id,
-		),
-	));
-
-	al_b2b_record_marketing_event('checkout_opt_in', $email, array(
-		'user_id' => $customer_id,
-		'source' => 'checkout',
-		'customer_type' => $customer_type,
-		'region' => $billing_country,
-		'payload' => array(
-			'order_id' => (int) $order_id,
-		),
-		'occurred_at' => gmdate('Y-m-d H:i:s'),
-	));
-
-	al_b2b_sync_newsletter_to_brevo($email, 'checkout', array(
-		'customer_type' => $customer_type,
-		'region' => $billing_country,
-		'attributes' => array(
-			'NEWSLETTER_OPT_IN' => true,
-		),
-	));
 }
 
 function al_b2b_get_product_reviews($request) {
