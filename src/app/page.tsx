@@ -159,7 +159,6 @@ export default async function Home() {
   const source = inStock.length > 0 ? inStock : catalog;
   const glutanexInStock = glutanexCatalog.filter((product) => product.inStock !== false);
   const glutanexSource = glutanexInStock.length > 0 ? glutanexInStock : glutanexCatalog;
-  const featuredSource = selectProductsWithFallback(source, source, 6);
 
   const bestsellersSource = glutanexSource;
 
@@ -173,7 +172,7 @@ export default async function Home() {
     6,
   );
 
-  const featuredProducts = featuredSource.map(toFeaturedCard);
+  const featuredProducts = glutanexSource.map(toFeaturedCard);
   const bestsellers = bestsellersSource.map((p) => toExploreCard(p, 'pure'));
   const newArrivals = newArrivalsSource.map((p) => toExploreCard(p, 'varnaya'));
 

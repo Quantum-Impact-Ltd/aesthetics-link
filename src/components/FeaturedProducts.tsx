@@ -56,7 +56,7 @@ export default function FeaturedProducts({
 }: {
   products?: LandingFeaturedProduct[];
 }) {
-  const featuredProducts = products && products.length > 0 ? products : FEATURED_PRODUCTS;
+  const featuredProducts = products ?? FEATURED_PRODUCTS;
 
   return (
     <section id="featured-products">
