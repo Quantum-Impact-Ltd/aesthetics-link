@@ -1340,6 +1340,11 @@ section {
   overflow: hidden;
 }
 
+#explore .half__grid-img .parallax-image {
+  position: absolute;
+  inset: 0;
+}
+
 #explore .half__grid-img img {
   position: absolute;
   top: -5%;

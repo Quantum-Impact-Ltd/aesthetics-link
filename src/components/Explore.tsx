@@ -365,10 +365,17 @@ export default function Explore({
   bestsellers?: LandingExploreProduct[];
   newArrivals?: LandingExploreProduct[];
 }) {
+<<<<<<< Updated upstream
   const img1Ref = useParallax<HTMLImageElement>(0.12);
   const img2Ref = useParallax<HTMLImageElement>(0.12);
   const bestSellerProducts = bestsellers ?? pureBrillianceProducts;
   const newArrivalProducts = newArrivals ?? refinedBlendsProducts;
+=======
+  const img1Ref = useParallax<HTMLDivElement>(0.12);
+  const img2Ref = useParallax<HTMLDivElement>(0.12);
+  const bestSellerProducts = bestsellers && bestsellers.length > 0 ? bestsellers : pureBrillianceProducts;
+  const newArrivalProducts = newArrivals && newArrivals.length > 0 ? newArrivals : refinedBlendsProducts;
+>>>>>>> Stashed changes
 
   return (
     <section id="explore" style={{ position: "relative", margin: 0 }}>
@@ -403,8 +410,18 @@ export default function Explore({
 
       {/* Bestsellers */}
       <div className="half__grid reveal-up" data-reveal>
-        <div className="half__grid-img">
-          <Image ref={img1Ref} alt="Bestsellers" src="/images/explore-1.jpg" fill sizes="50vw" style={{ objectFit: "cover" }} className="parallax-image-asset" />
+        <div ref={img1Ref} className="half__grid-img parallax-scroll">
+          <div className="media-img parallax-image">
+            <Image
+              alt="Bestsellers"
+              src="/images/explore-1.jpg"
+              width={1200}
+              height={1440}
+              sizes="50vw"
+              style={{ objectFit: "cover" }}
+              className="parallax-image-asset"
+            />
+          </div>
         </div>
         <div className="half__grid-content">
           <div className="half__grid-text">
@@ -425,8 +442,18 @@ export default function Explore({
 
       {/* New Arrivals */}
       <div className="half__grid reveal-up" data-reveal>
-        <div className="half__grid-img">
-          <Image ref={img2Ref} alt="New Arrivals" src="/images/explore-2.jpg" fill sizes="50vw" style={{ objectFit: "cover" }} className="parallax-image-asset" />
+        <div ref={img2Ref} className="half__grid-img parallax-scroll">
+          <div className="media-img parallax-image">
+            <Image
+              alt="New Arrivals"
+              src="/images/explore-2.jpg"
+              width={1200}
+              height={1440}
+              sizes="50vw"
+              style={{ objectFit: "cover" }}
+              className="parallax-image-asset"
+            />
+          </div>
         </div>
         <div className="half__grid-content">
           <div className="half__grid-text">
